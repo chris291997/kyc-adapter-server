@@ -129,6 +129,46 @@ Once deployed, Railway will provide you with:
 
 ## Troubleshooting
 
+### "No Deploys for This Service" Error
+
+If you see "no deploys for this service", try these steps:
+
+1. **Check Repository Connection**
+   - Go to your service settings → "Source" tab
+   - Ensure your GitHub repository is connected
+   - Verify the correct branch is selected (usually `main` or `master`)
+
+2. **Trigger Manual Deployment**
+   - In Railway dashboard, click on your service
+   - Click "Deploy" button or "Redeploy" option
+   - Or go to "Settings" → "Deploy" → "Manual Deploy"
+
+3. **Push Changes to Trigger Auto-Deploy**
+   ```bash
+   git add railway.toml Dockerfile .dockerignore
+   git commit -m "Add Railway deployment configuration"
+   git push origin main
+   ```
+   Railway should automatically detect the push and start building
+
+4. **Check Build Settings**
+   - Go to your service → "Settings" → "Build"
+   - Ensure "Dockerfile" is selected as the build method
+   - Verify the root directory is correct (should be `/`)
+
+5. **Check Service Type**
+   - Make sure you created a "Service" (not just a Database)
+   - If you only see databases, click "New" → "Service" → "GitHub Repo"
+
+6. **Check Build Logs**
+   - Click on your service
+   - Look for any build errors in the logs
+   - Common issues: missing files, build failures
+
+7. **Verify Files Are Committed**
+   - Ensure `railway.toml` and `Dockerfile` are committed to your repository
+   - Check that they're not in `.gitignore`
+
 ### Database Connection Issues
 - Ensure `DB_SSL=true` is set for Railway's PostgreSQL
 - Check that all database environment variables are correctly set
