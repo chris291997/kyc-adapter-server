@@ -11,6 +11,7 @@ import { CreateVerificationDto } from './dto/create-verification.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { OverrideVerificationDto } from './dto/override-verification.dto';
 import { PhilsysPcnDto } from './dto/philsys-pcn.dto';
+import { DocumentVerificationDto } from './dto/document-verification.dto';
 import { IDmetaProvider } from '../providers/implementations/idmeta/idmeta.provider';
 import { EventPublisher } from '../websocket/event-publisher.service';
 
@@ -250,6 +251,78 @@ export class VerificationsService {
         document: {
           type: 'philsys_pcn',
           number: dto.pcn,
+        },
+      });
+    }
+
+    // 5) Publish websocket update
+    try {
+      await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
+    } catch (e) {
+      this.logger.warn(`Failed to publish websocket event for verification ${verification.id}: ${e.message}`);
+    }
+
+    return { id: verification.id, status: result.status };
+  }
+
+  async runDocumentVerification(
+    tenantId: string,
+    params: { verificationId: string; templateId: string; imageFrontSide: string; imageBackSide?: string }
+  ) {
+    // 1) Load verification and provider
+    const verification = await this.getVerification(params.verificationId, tenantId);
+    const { providerInstance, providerEntity, assignment } = await this.getProviderForTenant(tenantId);
+
+    if (!(providerInstance instanceof IDmetaProvider)) {
+      throw new BadRequestException('Document verification is only supported for IDmeta provider in this flow');
+    }
+
+    if (!providerInstance.isInitialized) {
+      await providerInstance.initialize(
+        {
+          apiKey: providerEntity.api_key,
+          secretKey: providerEntity.secret_key,
+          webhookSecret: providerEntity.webhook_secret,
+          baseUrl: providerEntity.base_url,
+          apiVersion: providerEntity.api_version || 'v1',
+        },
+        {
+          timeout: (providerEntity.config as any)?.timeout || 30000,
+          retryAttempts: (providerEntity.config as any)?.retryAttempts || 3,
+          ...assignment.tenant_overrides,
+        }
+      );
+    }
+
+    // Ensure we have the provider's external verification id
+    if (!verification.external_verification_id) {
+      throw new BadRequestException('Verification is not initialized with IDmeta. Initiate a session first to obtain external_verification_id.');
+    }
+
+    // Emit progress
+    await this.eventPublisher.publishProgress(verification.id, 'document_verification', 20);
+
+    // 2) Call IDmeta Document Verification
+    const result = await providerInstance.verifyDocument({
+      imageFrontSide: params.imageFrontSide,
+      imageBackSide: params.imageBackSide,
+      templateId: params.templateId,
+      verificationId: verification.external_verification_id,
+    });
+
+    // 3) Update verification with latest status and provider data
+    await this.verificationRepository.update(verification.id, {
+      status: result.status as any,
+      provider_response: result.providerData,
+      validated_user_data: result.providerData?.parsedResult?.data ?? result.providerData?.parsedResult,
+      updated_at: new Date(),
+    });
+
+    // 4) Update account status if linked
+    if (verification.account_id) {
+      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
+        document: {
+          type: 'document_verification',
         },
       });
     }

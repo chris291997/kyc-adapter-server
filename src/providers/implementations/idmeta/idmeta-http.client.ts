@@ -40,6 +40,19 @@ export interface IDmetaPhilsysResponse {
   result?: string | any;
 }
 
+export interface IDmetaDocumentVerificationRequest {
+  imageFrontSide: string;
+  imageBackSide?: string;
+  template_id: string;
+  verification_id: string;
+}
+
+export interface IDmetaDocumentVerificationResponse {
+  status?: boolean | string | number;
+  message?: string;
+  result?: any;
+}
+
 @Injectable()
 export class IDmetaHttpClient {
   private readonly logger = new Logger(IDmetaHttpClient.name);
@@ -196,6 +209,35 @@ export class IDmetaHttpClient {
     } catch (error) {
       this.logger.error('Failed to perform IDmeta Philsys verification', error.response?.data || error.message);
       throw new Error(`IDmeta Philsys verification failed: ${error.response?.data?.message || error.message}`);
+    }
+  }
+
+  async documentVerification(
+    request: IDmetaDocumentVerificationRequest
+  ): Promise<IDmetaDocumentVerificationResponse> {
+    const axios = require('axios');
+    const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/document_verification`;
+    this.logger.log(`[IDmeta] Document verification at endpoint: ${endpoint}`);
+    try {
+      const payload: any = {
+        imageFrontSide: request.imageFrontSide,
+        template_id: request.template_id,
+        verification_id: request.verification_id,
+      };
+      if (request.imageBackSide) payload.imageBackSide = request.imageBackSide;
+
+      const response = await axios.post(endpoint, payload, {
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: this.timeout,
+      });
+
+      return response.data as IDmetaDocumentVerificationResponse;
+    } catch (error) {
+      this.logger.error('Failed to perform IDmeta Document verification', error.response?.data || error.message);
+      throw new Error(`IDmeta Document verification failed: ${error.response?.data?.message || error.message}`);
     }
   }
 }

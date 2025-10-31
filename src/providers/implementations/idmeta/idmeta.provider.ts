@@ -183,6 +183,37 @@ export class IDmetaProvider implements IKycProvider {
     };
   }
 
+  /**
+   * Execute Document Verification against IDmeta
+   */
+  async verifyDocument(params: {
+    imageFrontSide: string;
+    imageBackSide?: string;
+    templateId: string;
+    verificationId: string; // IDmeta external verification id
+  }): Promise<{ status: string; providerData: any }> {
+    const response = await this.httpClient.documentVerification({
+      imageFrontSide: params.imageFrontSide,
+      imageBackSide: params.imageBackSide,
+      template_id: params.templateId,
+      verification_id: params.verificationId,
+    });
+
+    // Normalize various status shapes into our internal statuses
+    const rawStatus = (response as any)?.status;
+    const status = this.mapStatus(
+      typeof rawStatus === 'string' ? rawStatus : rawStatus === true ? 'completed' : 'processing'
+    );
+
+    // Some providers return nested result structures
+    const providerData = {
+      fullResponse: response,
+      parsedResult: (response as any)?.result ?? response,
+    };
+
+    return { status, providerData };
+  }
+
   private mapPhilsysStatus(statusCode: number, statusMessage: string, result: any): string {
     if (statusCode === 3 || statusMessage === 'VERIFIED') return 'approved';
     if (statusCode === 1 || statusMessage === 'REJECTED') return 'rejected';

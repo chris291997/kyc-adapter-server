@@ -5,6 +5,7 @@ import { CreateVerificationDto } from './dto/create-verification.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { OverrideVerificationDto } from './dto/override-verification.dto';
 import { PhilsysPcnDto } from './dto/philsys-pcn.dto';
+import { DocumentVerificationDto } from './dto/document-verification.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiKeyAuthGuard } from '../auth/guards/api-key-auth.guard';
 import { JwtOrApiKeyGuard } from '../auth/guards/jwt-or-api-key.guard';
@@ -95,6 +96,24 @@ export class VerificationsController {
     @Request() req
   ) {
     return this.verificationsService.uploadDocument(id, uploadDto, req.user.tenantId);
+  }
+
+  @Post(':id/document')
+  @UseGuards(ApiKeyAuthGuard)
+  @ApiSecurity('api-key')
+  @ApiOperation({ summary: 'Run Document Verification for an initialized verification' })
+  @ApiResponse({ status: 200, description: 'Document verification executed' })
+  async runDocumentVerification(
+    @Param('id') id: string,
+    @Body() dto: DocumentVerificationDto,
+    @Request() req
+  ) {
+    return this.verificationsService.runDocumentVerification(req.user.tenantId, {
+      verificationId: id,
+      templateId: dto.templateId,
+      imageFrontSide: dto.imageFrontSide,
+      imageBackSide: dto.imageBackSide,
+    });
   }
 
   @Put(':id/override')
