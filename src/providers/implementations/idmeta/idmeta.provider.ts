@@ -214,10 +214,316 @@ export class IDmetaProvider implements IKycProvider {
     return { status, providerData };
   }
 
+  /**
+   * Execute PH LTO Drivers License verification against IDmeta
+   */
+  async verifyPhLtoDriversLicense(params: {
+    licenseNo: string;
+    templateId: string;
+    verificationId: string;
+  }): Promise<{ status: string; providerData: any }> {
+    const response = await this.httpClient.verifyPhLtoDriversLicense({
+      licenseNo: params.licenseNo,
+      template_id: params.templateId,
+      verification_id: params.verificationId,
+    });
+
+    let parsedResult: any = response?.result;
+    if (typeof parsedResult === 'string') {
+      try { parsedResult = JSON.parse(parsedResult); } catch { /* ignore parse error */ }
+    }
+
+    const mappedStatus = this.mapGovernmentDataStatus(response?.status, response?.status_message, parsedResult);
+
+    return {
+      status: mappedStatus,
+      providerData: {
+        fullResponse: response,
+        parsedResult,
+      },
+    };
+  }
+
+  /**
+   * Execute PH National Police verification against IDmeta
+   */
+  async verifyPhNationalPolice(params: {
+    surname: string;
+    clearanceNo: string;
+    templateId: string;
+    verificationId: string;
+  }): Promise<{ status: string; providerData: any }> {
+    const response = await this.httpClient.verifyPhNationalPolice({
+      surname: params.surname,
+      clearanceNo: params.clearanceNo,
+      template_id: params.templateId,
+      verification_id: params.verificationId,
+    });
+
+    let parsedResult: any = response?.result;
+    if (typeof parsedResult === 'string') {
+      try { parsedResult = JSON.parse(parsedResult); } catch { /* ignore parse error */ }
+    }
+
+    const mappedStatus = this.mapGovernmentDataStatus(response?.status, response?.status_message, parsedResult);
+
+    return {
+      status: mappedStatus,
+      providerData: {
+        fullResponse: response,
+        parsedResult,
+      },
+    };
+  }
+
+  /**
+   * Execute PH NBI verification against IDmeta
+   */
+  async verifyPhNbi(params: {
+    clearanceNo: string;
+    templateId: string;
+    verificationId: string;
+  }): Promise<{ status: string; providerData: any }> {
+    const response = await this.httpClient.verifyPhNbi({
+      clearanceNo: params.clearanceNo,
+      template_id: params.templateId,
+      verification_id: params.verificationId,
+    });
+
+    let parsedResult: any = response?.result;
+    if (typeof parsedResult === 'string') {
+      try { parsedResult = JSON.parse(parsedResult); } catch { /* ignore parse error */ }
+    }
+
+    const mappedStatus = this.mapGovernmentDataStatus(response?.status, response?.status_message, parsedResult);
+
+    return {
+      status: mappedStatus,
+      providerData: {
+        fullResponse: response,
+        parsedResult,
+      },
+    };
+  }
+
+  /**
+   * Execute PH PRC verification against IDmeta
+   */
+  async verifyPhPrc(params: {
+    profession: string;
+    licenseNo?: string;
+    dateOfBirth?: string;
+    firstName?: string;
+    lastName?: string;
+    templateId: string;
+    verificationId: string;
+  }): Promise<{ status: string; providerData: any }> {
+    const response = await this.httpClient.verifyPhPrc({
+      profession: params.profession,
+      licenseNo: params.licenseNo,
+      dateOfBirth: params.dateOfBirth,
+      firstName: params.firstName,
+      lastName: params.lastName,
+      template_id: params.templateId,
+      verification_id: params.verificationId,
+    });
+
+    let parsedResult: any = response?.result;
+    if (typeof parsedResult === 'string') {
+      try { parsedResult = JSON.parse(parsedResult); } catch { /* ignore parse error */ }
+    }
+
+    const mappedStatus = this.mapGovernmentDataStatus(response?.status, response?.status_message, parsedResult);
+
+    return {
+      status: mappedStatus,
+      providerData: {
+        fullResponse: response,
+        parsedResult,
+      },
+    };
+  }
+
+  /**
+   * Execute PH SSS verification against IDmeta
+   */
+  async verifyPhSss(params: {
+    crnSsNumber: string;
+    templateId: string;
+    verificationId: string;
+  }): Promise<{ status: string; providerData: any }> {
+    const response = await this.httpClient.verifyPhSss({
+      crnSsNumber: params.crnSsNumber,
+      template_id: params.templateId,
+      verification_id: params.verificationId,
+    });
+
+    let parsedResult: any = response?.result;
+    if (typeof parsedResult === 'string') {
+      try { parsedResult = JSON.parse(parsedResult); } catch { /* ignore parse error */ }
+    }
+
+    const mappedStatus = this.mapGovernmentDataStatus(response?.status, response?.status_message, parsedResult);
+
+    return {
+      status: mappedStatus,
+      providerData: {
+        fullResponse: response,
+        parsedResult,
+      },
+    };
+  }
+
   private mapPhilsysStatus(statusCode: number, statusMessage: string, result: any): string {
     if (statusCode === 3 || statusMessage === 'VERIFIED') return 'approved';
     if (statusCode === 1 || statusMessage === 'REJECTED') return 'rejected';
     return 'processing';
+  }
+
+  private mapGovernmentDataStatus(status: number | string, statusMessage?: string, result?: any): string {
+    // Handle numeric status codes
+    if (typeof status === 'number') {
+      if (status === 3 || status === 200) return 'approved';
+      if (status === 1 || status === 400 || status === 404) return 'rejected';
+      return 'processing';
+    }
+
+    // Handle string statuses
+    if (typeof status === 'string') {
+      const upperStatus = status.toUpperCase();
+      if (upperStatus === 'VERIFIED' || upperStatus === 'APPROVED' || upperStatus === 'SUCCESS') return 'approved';
+      if (upperStatus === 'REJECTED' || upperStatus === 'FAILED' || upperStatus === 'INVALID') return 'rejected';
+      return 'processing';
+    }
+
+    // Check status message
+    if (statusMessage) {
+      const upperMessage = statusMessage.toUpperCase();
+      if (upperMessage === 'VERIFIED' || upperMessage === 'APPROVED') return 'approved';
+      if (upperMessage === 'REJECTED' || upperMessage === 'FAILED') return 'rejected';
+    }
+
+    return 'processing';
+  }
+
+  private mapBiometricsStatus(status: boolean, result?: any): string {
+    // Handle boolean status
+    if (status === true) {
+      // Check result status if available
+      if (result?.status) {
+        const upperStatus = result.status.toUpperCase();
+        if (upperStatus === 'SUCCESS') return 'approved';
+        if (upperStatus === 'FAILED' || upperStatus === 'ERROR') return 'rejected';
+      }
+      // Check score for face match (typically 70+ is a match)
+      if (result?.score !== undefined) {
+        if (result.score >= 70) return 'approved';
+        return 'rejected';
+      }
+      return 'approved';
+    }
+    return 'rejected';
+  }
+
+  async biometricsFaceMatch(params: {
+    image1: string;
+    image2: string;
+    templateId: string;
+    verificationId: string;
+  }): Promise<{ status: string; providerData: any }> {
+    const response = await this.httpClient.biometricsFaceCompare({
+      image1: params.image1,
+      image2: params.image2,
+      template_id: params.templateId,
+      verification_id: params.verificationId,
+    });
+
+    const mappedStatus = this.mapBiometricsStatus(response.status, response.result);
+
+    return {
+      status: mappedStatus,
+      providerData: {
+        fullResponse: response,
+        result: response.result,
+        score: response.result?.score,
+      },
+    };
+  }
+
+  async biometricsRegistration(params: {
+    username: string;
+    image: string;
+    templateId: string;
+    verificationId: string;
+  }): Promise<{ status: string; providerData: any }> {
+    const response = await this.httpClient.biometricsRegistration({
+      username: params.username,
+      image: params.image,
+      template_id: params.templateId,
+      verification_id: params.verificationId,
+    });
+
+    const mappedStatus = this.mapBiometricsStatus(response.status, response.result);
+
+    return {
+      status: mappedStatus,
+      providerData: {
+        fullResponse: response,
+        result: response.result,
+        apiRequest: response.apiRequest,
+      },
+    };
+  }
+
+  async customDocument(params: {
+    document?: string;
+    templateId: string;
+    verificationId: string;
+  }): Promise<{ status: string; providerData: any }> {
+    const response = await this.httpClient.customDocument({
+      document: params.document,
+      template_id: params.templateId,
+      verification_id: params.verificationId,
+    });
+
+    // Custom document returns status: true/false
+    const mappedStatus = response.status ? 'approved' : 'rejected';
+
+    return {
+      status: mappedStatus,
+      providerData: {
+        fullResponse: response,
+        result: response.result,
+        formData: response.result?.formData,
+      },
+    };
+  }
+
+  async biometricVerification(params: {
+    image?: string;
+    imageBase64?: string;
+    templateId: string;
+    verificationId: string;
+  }): Promise<{ status: string; providerData: any }> {
+    const response = await this.httpClient.biometricVerification({
+      image: params.image,
+      image_base64: params.imageBase64,
+      template_id: params.templateId,
+      verification_id: params.verificationId,
+    });
+
+    const mappedStatus = this.mapBiometricsStatus(response.status, response.result);
+
+    return {
+      status: mappedStatus,
+      providerData: {
+        fullResponse: response,
+        result: response.result,
+        apiRequest: response.apiRequest,
+        probability: response.result?.probability,
+        faceId: response.result?.faceId,
+      },
+    };
   }
 
   private verifyWebhookSignature(payload: unknown, signature: string, secret: string): boolean {

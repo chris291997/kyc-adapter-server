@@ -11,7 +11,15 @@ import { CreateVerificationDto } from './dto/create-verification.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { OverrideVerificationDto } from './dto/override-verification.dto';
 import { PhilsysPcnDto } from './dto/philsys-pcn.dto';
-import { DocumentVerificationDto } from './dto/document-verification.dto';
+import { PhLtoDriversLicenseDto } from './dto/ph-lto-drivers-license.dto';
+import { PhNationalPoliceDto } from './dto/ph-national-police.dto';
+import { PhNbiDto } from './dto/ph-nbi.dto';
+import { PhPrcDto } from './dto/ph-prc.dto';
+import { PhSssDto } from './dto/ph-sss.dto';
+import { BiometricsFaceMatchDto } from './dto/biometrics-face-match.dto';
+import { BiometricsRegistrationDto } from './dto/biometrics-registration.dto';
+import { BiometricVerificationDto } from './dto/biometric-verification.dto';
+import { CustomDocumentDto } from './dto/custom-document.dto';
 import { IDmetaProvider } from '../providers/implementations/idmeta/idmeta.provider';
 import { EventPublisher } from '../websocket/event-publisher.service';
 
@@ -328,6 +336,632 @@ export class VerificationsService {
     }
 
     // 5) Publish websocket update
+    try {
+      await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
+    } catch (e) {
+      this.logger.warn(`Failed to publish websocket event for verification ${verification.id}: ${e.message}`);
+    }
+
+    return { id: verification.id, status: result.status };
+  }
+
+  async verifyPhLtoDriversLicense(tenantId: string, dto: PhLtoDriversLicenseDto) {
+    // 1) Load verification and provider
+    const verification = await this.getVerification(dto.verificationId, tenantId);
+    const { providerInstance, providerEntity, assignment } = await this.getProviderForTenant(tenantId);
+
+    if (!(providerInstance instanceof IDmetaProvider)) {
+      throw new BadRequestException('PH LTO Drivers License is only supported for IDmeta provider');
+    }
+
+    if (!providerInstance.isInitialized) {
+      await providerInstance.initialize(
+        {
+          apiKey: providerEntity.api_key,
+          secretKey: providerEntity.secret_key,
+          webhookSecret: providerEntity.webhook_secret,
+          baseUrl: providerEntity.base_url,
+          apiVersion: providerEntity.api_version || 'v1',
+        },
+        {
+          timeout: (providerEntity.config as any)?.timeout || 30000,
+          retryAttempts: (providerEntity.config as any)?.retryAttempts || 3,
+          ...assignment.tenant_overrides,
+        }
+      );
+    }
+
+    if (!verification.external_verification_id) {
+      throw new BadRequestException('Verification is not initialized with IDmeta. Initiate a session first to obtain external_verification_id.');
+    }
+
+    await this.eventPublisher.publishProgress(verification.id, 'ph_lto_verification', 25);
+
+    const result = await providerInstance.verifyPhLtoDriversLicense({
+      licenseNo: dto.licenseNo,
+      templateId: dto.templateId,
+      verificationId: verification.external_verification_id,
+    });
+
+    await this.verificationRepository.update(verification.id, {
+      status: result.status as any,
+      provider_response: result.providerData,
+      validated_user_data: result.providerData?.parsedResult?.data,
+      metadata: ({
+        ...(verification.user_metadata || verification.metadata || {}),
+        request_type: 'ph_lto_drivers_license',
+        country: 'PH',
+        flow: 'government_data',
+        license_no: dto.licenseNo,
+      } as any),
+    });
+
+    if (verification.account_id) {
+      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
+        document: {
+          type: 'ph_lto_drivers_license',
+          number: dto.licenseNo,
+        },
+      });
+    }
+
+    try {
+      await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
+    } catch (e) {
+      this.logger.warn(`Failed to publish websocket event for verification ${verification.id}: ${e.message}`);
+    }
+
+    return { id: verification.id, status: result.status };
+  }
+
+  async verifyPhNationalPolice(tenantId: string, dto: PhNationalPoliceDto) {
+    const verification = await this.getVerification(dto.verificationId, tenantId);
+    const { providerInstance, providerEntity, assignment } = await this.getProviderForTenant(tenantId);
+
+    if (!(providerInstance instanceof IDmetaProvider)) {
+      throw new BadRequestException('PH National Police is only supported for IDmeta provider');
+    }
+
+    if (!providerInstance.isInitialized) {
+      await providerInstance.initialize(
+        {
+          apiKey: providerEntity.api_key,
+          secretKey: providerEntity.secret_key,
+          webhookSecret: providerEntity.webhook_secret,
+          baseUrl: providerEntity.base_url,
+          apiVersion: providerEntity.api_version || 'v1',
+        },
+        {
+          timeout: (providerEntity.config as any)?.timeout || 30000,
+          retryAttempts: (providerEntity.config as any)?.retryAttempts || 3,
+          ...assignment.tenant_overrides,
+        }
+      );
+    }
+
+    if (!verification.external_verification_id) {
+      throw new BadRequestException('Verification is not initialized with IDmeta. Initiate a session first to obtain external_verification_id.');
+    }
+
+    await this.eventPublisher.publishProgress(verification.id, 'ph_national_police_verification', 25);
+
+    const result = await providerInstance.verifyPhNationalPolice({
+      surname: dto.surname,
+      clearanceNo: dto.clearanceNo,
+      templateId: dto.templateId,
+      verificationId: verification.external_verification_id,
+    });
+
+    await this.verificationRepository.update(verification.id, {
+      status: result.status as any,
+      provider_response: result.providerData,
+      validated_user_data: result.providerData?.parsedResult?.data,
+      metadata: ({
+        ...(verification.user_metadata || verification.metadata || {}),
+        request_type: 'ph_national_police',
+        country: 'PH',
+        flow: 'government_data',
+        clearance_no: dto.clearanceNo,
+        surname: dto.surname,
+      } as any),
+    });
+
+    if (verification.account_id) {
+      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
+        document: {
+          type: 'ph_national_police',
+          number: dto.clearanceNo,
+        },
+      });
+    }
+
+    try {
+      await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
+    } catch (e) {
+      this.logger.warn(`Failed to publish websocket event for verification ${verification.id}: ${e.message}`);
+    }
+
+    return { id: verification.id, status: result.status };
+  }
+
+  async verifyPhNbi(tenantId: string, dto: PhNbiDto) {
+    const verification = await this.getVerification(dto.verificationId, tenantId);
+    const { providerInstance, providerEntity, assignment } = await this.getProviderForTenant(tenantId);
+
+    if (!(providerInstance instanceof IDmetaProvider)) {
+      throw new BadRequestException('PH NBI is only supported for IDmeta provider');
+    }
+
+    if (!providerInstance.isInitialized) {
+      await providerInstance.initialize(
+        {
+          apiKey: providerEntity.api_key,
+          secretKey: providerEntity.secret_key,
+          webhookSecret: providerEntity.webhook_secret,
+          baseUrl: providerEntity.base_url,
+          apiVersion: providerEntity.api_version || 'v1',
+        },
+        {
+          timeout: (providerEntity.config as any)?.timeout || 30000,
+          retryAttempts: (providerEntity.config as any)?.retryAttempts || 3,
+          ...assignment.tenant_overrides,
+        }
+      );
+    }
+
+    if (!verification.external_verification_id) {
+      throw new BadRequestException('Verification is not initialized with IDmeta. Initiate a session first to obtain external_verification_id.');
+    }
+
+    await this.eventPublisher.publishProgress(verification.id, 'ph_nbi_verification', 25);
+
+    const result = await providerInstance.verifyPhNbi({
+      clearanceNo: dto.clearanceNo,
+      templateId: dto.templateId,
+      verificationId: verification.external_verification_id,
+    });
+
+    await this.verificationRepository.update(verification.id, {
+      status: result.status as any,
+      provider_response: result.providerData,
+      validated_user_data: result.providerData?.parsedResult?.data,
+      metadata: ({
+        ...(verification.user_metadata || verification.metadata || {}),
+        request_type: 'ph_nbi',
+        country: 'PH',
+        flow: 'government_data',
+        clearance_no: dto.clearanceNo,
+      } as any),
+    });
+
+    if (verification.account_id) {
+      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
+        document: {
+          type: 'ph_nbi',
+          number: dto.clearanceNo,
+        },
+      });
+    }
+
+    try {
+      await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
+    } catch (e) {
+      this.logger.warn(`Failed to publish websocket event for verification ${verification.id}: ${e.message}`);
+    }
+
+    return { id: verification.id, status: result.status };
+  }
+
+  async verifyPhPrc(tenantId: string, dto: PhPrcDto) {
+    const verification = await this.getVerification(dto.verificationId, tenantId);
+    const { providerInstance, providerEntity, assignment } = await this.getProviderForTenant(tenantId);
+
+    if (!(providerInstance instanceof IDmetaProvider)) {
+      throw new BadRequestException('PH PRC is only supported for IDmeta provider');
+    }
+
+    if (!providerInstance.isInitialized) {
+      await providerInstance.initialize(
+        {
+          apiKey: providerEntity.api_key,
+          secretKey: providerEntity.secret_key,
+          webhookSecret: providerEntity.webhook_secret,
+          baseUrl: providerEntity.base_url,
+          apiVersion: providerEntity.api_version || 'v1',
+        },
+        {
+          timeout: (providerEntity.config as any)?.timeout || 30000,
+          retryAttempts: (providerEntity.config as any)?.retryAttempts || 3,
+          ...assignment.tenant_overrides,
+        }
+      );
+    }
+
+    if (!verification.external_verification_id) {
+      throw new BadRequestException('Verification is not initialized with IDmeta. Initiate a session first to obtain external_verification_id.');
+    }
+
+    // Validate that either license-based or name-based search parameters are provided
+    if (!(dto.licenseNo && dto.dateOfBirth) && !(dto.firstName && dto.lastName)) {
+      throw new BadRequestException('Either (licenseNo and dateOfBirth) or (firstName and lastName) must be provided');
+    }
+
+    await this.eventPublisher.publishProgress(verification.id, 'ph_prc_verification', 25);
+
+    const result = await providerInstance.verifyPhPrc({
+      profession: dto.profession,
+      licenseNo: dto.licenseNo,
+      dateOfBirth: dto.dateOfBirth,
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      templateId: dto.templateId,
+      verificationId: verification.external_verification_id,
+    });
+
+    await this.verificationRepository.update(verification.id, {
+      status: result.status as any,
+      provider_response: result.providerData,
+      validated_user_data: result.providerData?.parsedResult?.data,
+      metadata: ({
+        ...(verification.user_metadata || verification.metadata || {}),
+        request_type: 'ph_prc',
+        country: 'PH',
+        flow: 'government_data',
+        profession: dto.profession,
+        search_type: dto.licenseNo ? 'license' : 'name',
+      } as any),
+    });
+
+    if (verification.account_id) {
+      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
+        document: {
+          type: 'ph_prc',
+          profession: dto.profession,
+        },
+      });
+    }
+
+    try {
+      await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
+    } catch (e) {
+      this.logger.warn(`Failed to publish websocket event for verification ${verification.id}: ${e.message}`);
+    }
+
+    return { id: verification.id, status: result.status };
+  }
+
+  async verifyPhSss(tenantId: string, dto: PhSssDto) {
+    const verification = await this.getVerification(dto.verificationId, tenantId);
+    const { providerInstance, providerEntity, assignment } = await this.getProviderForTenant(tenantId);
+
+    if (!(providerInstance instanceof IDmetaProvider)) {
+      throw new BadRequestException('PH SSS is only supported for IDmeta provider');
+    }
+
+    if (!providerInstance.isInitialized) {
+      await providerInstance.initialize(
+        {
+          apiKey: providerEntity.api_key,
+          secretKey: providerEntity.secret_key,
+          webhookSecret: providerEntity.webhook_secret,
+          baseUrl: providerEntity.base_url,
+          apiVersion: providerEntity.api_version || 'v1',
+        },
+        {
+          timeout: (providerEntity.config as any)?.timeout || 30000,
+          retryAttempts: (providerEntity.config as any)?.retryAttempts || 3,
+          ...assignment.tenant_overrides,
+        }
+      );
+    }
+
+    if (!verification.external_verification_id) {
+      throw new BadRequestException('Verification is not initialized with IDmeta. Initiate a session first to obtain external_verification_id.');
+    }
+
+    await this.eventPublisher.publishProgress(verification.id, 'ph_sss_verification', 25);
+
+    const result = await providerInstance.verifyPhSss({
+      crnSsNumber: dto.crnSsNumber,
+      templateId: dto.templateId,
+      verificationId: verification.external_verification_id,
+    });
+
+    await this.verificationRepository.update(verification.id, {
+      status: result.status as any,
+      provider_response: result.providerData,
+      validated_user_data: result.providerData?.parsedResult?.data,
+      metadata: ({
+        ...(verification.user_metadata || verification.metadata || {}),
+        request_type: 'ph_sss',
+        country: 'PH',
+        flow: 'government_data',
+        crn_ss_number: dto.crnSsNumber,
+      } as any),
+    });
+
+    if (verification.account_id) {
+      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
+        document: {
+          type: 'ph_sss',
+          number: dto.crnSsNumber,
+        },
+      });
+    }
+
+    try {
+      await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
+    } catch (e) {
+      this.logger.warn(`Failed to publish websocket event for verification ${verification.id}: ${e.message}`);
+    }
+
+    return { id: verification.id, status: result.status };
+  }
+
+  async biometricsFaceMatch(tenantId: string, dto: BiometricsFaceMatchDto) {
+    const verification = await this.getVerification(dto.verificationId, tenantId);
+    const { providerInstance, providerEntity, assignment } = await this.getProviderForTenant(tenantId);
+
+    if (!(providerInstance instanceof IDmetaProvider)) {
+      throw new BadRequestException('Biometrics Face Match is only supported for IDmeta provider');
+    }
+
+    if (!providerInstance.isInitialized) {
+      await providerInstance.initialize(
+        {
+          apiKey: providerEntity.api_key,
+          secretKey: providerEntity.secret_key,
+          webhookSecret: providerEntity.webhook_secret,
+          baseUrl: providerEntity.base_url,
+          apiVersion: providerEntity.api_version || 'v1',
+        },
+        {
+          timeout: (providerEntity.config as any)?.timeout || 30000,
+          retryAttempts: (providerEntity.config as any)?.retryAttempts || 3,
+          ...assignment.tenant_overrides,
+        }
+      );
+    }
+
+    if (!verification.external_verification_id) {
+      throw new BadRequestException('Verification is not initialized with IDmeta. Initiate a session first to obtain external_verification_id.');
+    }
+
+    await this.eventPublisher.publishProgress(verification.id, 'biometrics_face_match', 25);
+
+    const result = await providerInstance.biometricsFaceMatch({
+      image1: dto.image1,
+      image2: dto.image2,
+      templateId: dto.templateId,
+      verificationId: verification.external_verification_id,
+    });
+
+    await this.verificationRepository.update(verification.id, {
+      status: result.status as any,
+      provider_response: result.providerData,
+      validated_user_data: result.providerData?.result,
+      metadata: ({
+        ...(verification.user_metadata || verification.metadata || {}),
+        request_type: 'biometrics_face_match',
+        flow: 'compliance',
+        score: result.providerData?.score,
+      } as any),
+    });
+
+    if (verification.account_id) {
+      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
+        biometrics: {
+          type: 'face_match',
+          score: result.providerData?.score,
+        },
+      });
+    }
+
+    try {
+      await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
+    } catch (e) {
+      this.logger.warn(`Failed to publish websocket event for verification ${verification.id}: ${e.message}`);
+    }
+
+    return { id: verification.id, status: result.status };
+  }
+
+  async biometricsRegistration(tenantId: string, dto: BiometricsRegistrationDto) {
+    const verification = await this.getVerification(dto.verificationId, tenantId);
+    const { providerInstance, providerEntity, assignment } = await this.getProviderForTenant(tenantId);
+
+    if (!(providerInstance instanceof IDmetaProvider)) {
+      throw new BadRequestException('Biometrics Registration is only supported for IDmeta provider');
+    }
+
+    if (!providerInstance.isInitialized) {
+      await providerInstance.initialize(
+        {
+          apiKey: providerEntity.api_key,
+          secretKey: providerEntity.secret_key,
+          webhookSecret: providerEntity.webhook_secret,
+          baseUrl: providerEntity.base_url,
+          apiVersion: providerEntity.api_version || 'v1',
+        },
+        {
+          timeout: (providerEntity.config as any)?.timeout || 30000,
+          retryAttempts: (providerEntity.config as any)?.retryAttempts || 3,
+          ...assignment.tenant_overrides,
+        }
+      );
+    }
+
+    if (!verification.external_verification_id) {
+      throw new BadRequestException('Verification is not initialized with IDmeta. Initiate a session first to obtain external_verification_id.');
+    }
+
+    await this.eventPublisher.publishProgress(verification.id, 'biometrics_registration', 25);
+
+    const result = await providerInstance.biometricsRegistration({
+      username: dto.username,
+      image: dto.image,
+      templateId: dto.templateId,
+      verificationId: verification.external_verification_id,
+    });
+
+    await this.verificationRepository.update(verification.id, {
+      status: result.status as any,
+      provider_response: result.providerData,
+      validated_user_data: result.providerData?.result,
+      metadata: ({
+        ...(verification.user_metadata || verification.metadata || {}),
+        request_type: 'biometrics_registration',
+        flow: 'compliance',
+        username: dto.username,
+        faceId: result.providerData?.result?.result?.faceId,
+      } as any),
+    });
+
+    if (verification.account_id) {
+      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
+        biometrics: {
+          type: 'registration',
+          faceId: result.providerData?.result?.result?.faceId,
+        },
+      });
+    }
+
+    try {
+      await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
+    } catch (e) {
+      this.logger.warn(`Failed to publish websocket event for verification ${verification.id}: ${e.message}`);
+    }
+
+    return { id: verification.id, status: result.status };
+  }
+
+  async customDocument(tenantId: string, dto: CustomDocumentDto) {
+    const verification = await this.getVerification(dto.verificationId, tenantId);
+    const { providerInstance, providerEntity, assignment } = await this.getProviderForTenant(tenantId);
+
+    if (!(providerInstance instanceof IDmetaProvider)) {
+      throw new BadRequestException('Custom Document verification is only supported for IDmeta provider');
+    }
+
+    if (!providerInstance.isInitialized) {
+      await providerInstance.initialize(
+        {
+          apiKey: providerEntity.api_key,
+          secretKey: providerEntity.secret_key,
+          webhookSecret: providerEntity.webhook_secret,
+          baseUrl: providerEntity.base_url,
+          apiVersion: providerEntity.api_version || 'v1',
+        },
+        {
+          timeout: (providerEntity.config as any)?.timeout || 30000,
+          retryAttempts: (providerEntity.config as any)?.retryAttempts || 3,
+          ...assignment.tenant_overrides,
+        }
+      );
+    }
+
+    if (!verification.external_verification_id) {
+      throw new BadRequestException('Verification is not initialized with IDmeta. Initiate a session first to obtain external_verification_id.');
+    }
+
+    await this.eventPublisher.publishProgress(verification.id, 'custom_document', 25);
+
+    const result = await providerInstance.customDocument({
+      document: dto.document,
+      templateId: dto.templateId,
+      verificationId: verification.external_verification_id,
+    });
+
+    await this.verificationRepository.update(verification.id, {
+      status: result.status as any,
+      provider_response: result.providerData,
+      validated_user_data: result.providerData?.formData,
+      metadata: ({
+        ...(verification.user_metadata || verification.metadata || {}),
+        request_type: 'custom_document',
+        flow: 'customize',
+      } as any),
+    });
+
+    if (verification.account_id) {
+      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
+        document: {
+          type: 'custom',
+          extractedData: result.providerData?.formData,
+        },
+      });
+    }
+
+    try {
+      await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
+    } catch (e) {
+      this.logger.warn(`Failed to publish websocket event for verification ${verification.id}: ${e.message}`);
+    }
+
+    return { id: verification.id, status: result.status };
+  }
+
+  async biometricVerification(tenantId: string, dto: BiometricVerificationDto) {
+    const verification = await this.getVerification(dto.verificationId, tenantId);
+    const { providerInstance, providerEntity, assignment } = await this.getProviderForTenant(tenantId);
+
+    if (!(providerInstance instanceof IDmetaProvider)) {
+      throw new BadRequestException('Biometric Verification is only supported for IDmeta provider');
+    }
+
+    if (!providerInstance.isInitialized) {
+      await providerInstance.initialize(
+        {
+          apiKey: providerEntity.api_key,
+          secretKey: providerEntity.secret_key,
+          webhookSecret: providerEntity.webhook_secret,
+          baseUrl: providerEntity.base_url,
+          apiVersion: providerEntity.api_version || 'v1',
+        },
+        {
+          timeout: (providerEntity.config as any)?.timeout || 30000,
+          retryAttempts: (providerEntity.config as any)?.retryAttempts || 3,
+          ...assignment.tenant_overrides,
+        }
+      );
+    }
+
+    if (!verification.external_verification_id) {
+      throw new BadRequestException('Verification is not initialized with IDmeta. Initiate a session first to obtain external_verification_id.');
+    }
+
+    await this.eventPublisher.publishProgress(verification.id, 'biometric_verification', 25);
+
+    const result = await providerInstance.biometricVerification({
+      image: dto.image,
+      imageBase64: dto.imageBase64,
+      templateId: dto.templateId,
+      verificationId: verification.external_verification_id,
+    });
+
+    await this.verificationRepository.update(verification.id, {
+      status: result.status as any,
+      provider_response: result.providerData,
+      validated_user_data: result.providerData?.result,
+      metadata: ({
+        ...(verification.user_metadata || verification.metadata || {}),
+        request_type: 'biometric_verification',
+        flow: 'compliance',
+        probability: result.providerData?.probability,
+        faceId: result.providerData?.faceId,
+      } as any),
+    });
+
+    if (verification.account_id) {
+      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
+        biometrics: {
+          type: 'verification',
+          probability: result.providerData?.probability,
+          faceId: result.providerData?.faceId,
+        },
+      });
+    }
+
     try {
       await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
     } catch (e) {

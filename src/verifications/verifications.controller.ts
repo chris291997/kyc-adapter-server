@@ -6,6 +6,15 @@ import { UploadDocumentDto } from './dto/upload-document.dto';
 import { OverrideVerificationDto } from './dto/override-verification.dto';
 import { PhilsysPcnDto } from './dto/philsys-pcn.dto';
 import { DocumentVerificationDto } from './dto/document-verification.dto';
+import { PhLtoDriversLicenseDto } from './dto/ph-lto-drivers-license.dto';
+import { PhNationalPoliceDto } from './dto/ph-national-police.dto';
+import { PhNbiDto } from './dto/ph-nbi.dto';
+import { PhPrcDto } from './dto/ph-prc.dto';
+import { PhSssDto } from './dto/ph-sss.dto';
+import { BiometricsFaceMatchDto } from './dto/biometrics-face-match.dto';
+import { BiometricsRegistrationDto } from './dto/biometrics-registration.dto';
+import { BiometricVerificationDto } from './dto/biometric-verification.dto';
+import { CustomDocumentDto } from './dto/custom-document.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiKeyAuthGuard } from '../auth/guards/api-key-auth.guard';
 import { JwtOrApiKeyGuard } from '../auth/guards/jwt-or-api-key.guard';
@@ -143,6 +152,96 @@ export class VerificationsController {
   @ApiResponse({ status: 200, description: 'Philsys verification executed' })
   async verifyPhilsysPcn(@Body() dto: PhilsysPcnDto, @Request() req) {
     return this.verificationsService.verifyPhilsysPcn(req.user.tenantId, dto);
+  }
+
+  @Post('philippines/lto/drivers-license')
+  @UseGuards(JwtOrApiKeyGuard)
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
+  @ApiOperation({ summary: 'Verify PH LTO Drivers License' })
+  @ApiResponse({ status: 200, description: 'PH LTO Drivers License verification executed' })
+  async verifyPhLtoDriversLicense(@Body() dto: PhLtoDriversLicenseDto, @Request() req) {
+    return this.verificationsService.verifyPhLtoDriversLicense(req.user.tenantId, dto);
+  }
+
+  @Post('philippines/national-police')
+  @UseGuards(JwtOrApiKeyGuard)
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
+  @ApiOperation({ summary: 'Verify PH National Police Clearance' })
+  @ApiResponse({ status: 200, description: 'PH National Police verification executed' })
+  async verifyPhNationalPolice(@Body() dto: PhNationalPoliceDto, @Request() req) {
+    return this.verificationsService.verifyPhNationalPolice(req.user.tenantId, dto);
+  }
+
+  @Post('philippines/nbi')
+  @UseGuards(JwtOrApiKeyGuard)
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
+  @ApiOperation({ summary: 'Verify PH NBI Clearance' })
+  @ApiResponse({ status: 200, description: 'PH NBI verification executed' })
+  async verifyPhNbi(@Body() dto: PhNbiDto, @Request() req) {
+    return this.verificationsService.verifyPhNbi(req.user.tenantId, dto);
+  }
+
+  @Post('philippines/prc')
+  @UseGuards(JwtOrApiKeyGuard)
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
+  @ApiOperation({ summary: 'Verify PH PRC License' })
+  @ApiResponse({ status: 200, description: 'PH PRC verification executed' })
+  async verifyPhPrc(@Body() dto: PhPrcDto, @Request() req) {
+    return this.verificationsService.verifyPhPrc(req.user.tenantId, dto);
+  }
+
+  @Post('philippines/sss')
+  @UseGuards(JwtOrApiKeyGuard)
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
+  @ApiOperation({ summary: 'Verify PH SSS Number' })
+  @ApiResponse({ status: 200, description: 'PH SSS verification executed' })
+  async verifyPhSss(@Body() dto: PhSssDto, @Request() req) {
+    return this.verificationsService.verifyPhSss(req.user.tenantId, dto);
+  }
+
+  @Post('biometrics/face-match')
+  @UseGuards(JwtOrApiKeyGuard)
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
+  @ApiOperation({ summary: 'Biometrics Face Match - Compare two facial images' })
+  @ApiResponse({ status: 200, description: 'Biometrics face match executed' })
+  async biometricsFaceMatch(@Body() dto: BiometricsFaceMatchDto, @Request() req) {
+    return this.verificationsService.biometricsFaceMatch(req.user.tenantId, dto);
+  }
+
+  @Post('biometrics/registration')
+  @UseGuards(JwtOrApiKeyGuard)
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
+  @ApiOperation({ summary: 'Biometrics Registration - Register user biometric data' })
+  @ApiResponse({ status: 200, description: 'Biometrics registration executed' })
+  async biometricsRegistration(@Body() dto: BiometricsRegistrationDto, @Request() req) {
+    return this.verificationsService.biometricsRegistration(req.user.tenantId, dto);
+  }
+
+  @Post('biometrics/verification')
+  @UseGuards(JwtOrApiKeyGuard)
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
+  @ApiOperation({ summary: 'Biometric Verification - Authenticate identity through biometric liveness and facial recognition' })
+  @ApiResponse({ status: 200, description: 'Biometric verification executed' })
+  async biometricVerification(@Body() dto: BiometricVerificationDto, @Request() req) {
+    return this.verificationsService.biometricVerification(req.user.tenantId, dto);
+  }
+
+  @Post('custom/document')
+  @UseGuards(JwtOrApiKeyGuard)
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
+  @ApiOperation({ summary: 'Custom Document Verification' })
+  @ApiResponse({ status: 200, description: 'Custom document verification executed' })
+  async customDocument(@Body() dto: CustomDocumentDto, @Request() req) {
+    return this.verificationsService.customDocument(req.user.tenantId, dto);
   }
 }
 
