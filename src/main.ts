@@ -7,9 +7,19 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { json, urlencoded } from 'express';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Disable NestJS default body parser (which has 100KB limit) and configure our own with higher limit
+  const app = await NestFactory.create(AppModule, {
+    bodyParser: false, // Disable default body parser
+  });
+
+  // Configure body parser to handle large base64-encoded images (10MB limit)
+  // Base64 encoding increases image size by ~33%, so a 10MB limit can handle images up to ~7.5MB
+  // A 349KB image becomes ~465KB when base64 encoded, so 10MB provides plenty of headroom
+  app.use(json({ limit: '10mb' }));
+  app.use(urlencoded({ limit: '10mb', extended: true }));
 
   // Global validation pipe
   app.useGlobalPipes(new ValidationPipe({
