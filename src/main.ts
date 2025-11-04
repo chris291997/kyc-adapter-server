@@ -8,11 +8,20 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { json, urlencoded } from 'express';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
 
 async function bootstrap() {
   // Disable NestJS default body parser (which has 100KB limit) and configure our own with higher limit
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false, // Disable default body parser
+  });
+
+  // Serve static files from public/uploads directory
+  // Files in public/uploads/verifications/{id}/ are accessible at /uploads/verifications/{id}/
+  app.useStaticAssets(join(process.cwd(), 'public', 'uploads'), {
+    prefix: '/uploads',
+    index: false,
   });
 
   // Configure body parser to handle large base64-encoded images (10MB limit)

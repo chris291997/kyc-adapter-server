@@ -20,8 +20,11 @@ import { BiometricsFaceMatchDto } from './dto/biometrics-face-match.dto';
 import { BiometricsRegistrationDto } from './dto/biometrics-registration.dto';
 import { BiometricVerificationDto } from './dto/biometric-verification.dto';
 import { CustomDocumentDto } from './dto/custom-document.dto';
+import { FinalizeVerificationDto } from './dto/finalize-verification.dto';
+import { ManualFinalizeVerificationDto } from './dto/manual-finalize-verification.dto';
 import { IDmetaProvider } from '../providers/implementations/idmeta/idmeta.provider';
 import { EventPublisher } from '../websocket/event-publisher.service';
+import { FileStorageService } from '../common/file-storage.service';
 
 @Injectable()
 export class VerificationsService {
@@ -38,24 +41,23 @@ export class VerificationsService {
     private readonly verificationQueue: Queue,
     private readonly providersFactory: ProvidersFactory,
     private readonly eventPublisher: EventPublisher,
+    private readonly fileStorageService: FileStorageService,
   ) {}
 
   async createVerification(tenantId: string, createVerificationDto: CreateVerificationDto) {
     try {
-      // 1. Find or create account from verification data
-      let account: Account;
+      // 1. Link to existing account if accountId is provided
+      // Note: Account creation/saving is now handled ONLY after finalize-verification when status is 'verified'
+      let account: Account | null = null;
       
-      if (createVerificationDto.userEmail || createVerificationDto.accountId) {
-        account = await this.findOrCreateAccount(tenantId, {
-          accountId: createVerificationDto.accountId,
-          email: createVerificationDto.userEmail,
-          phone: createVerificationDto.userPhone,
-          metadata: createVerificationDto.metadata,
+      if (createVerificationDto.accountId) {
+        account = await this.accountRepository.findOne({
+          where: { id: createVerificationDto.accountId, tenant_id: tenantId },
         });
         
-        // Update account status to pending
-        account.verification_status = 'pending';
-        await this.accountRepository.save(account);
+        if (!account) {
+          throw new BadRequestException(`Account with ID ${createVerificationDto.accountId} not found`);
+        }
       }
 
       // 2. Get tenant's primary provider (with centralized credentials)
@@ -80,10 +82,11 @@ export class VerificationsService {
       }
 
       // 4. Create internal verification record
+      // Note: account_id will be set after finalize-verification when account is created/saved
       const verification = this.verificationRepository.create({
         tenant_id: tenantId,
         provider_id: providerEntity.id,
-        account_id: account?.id,
+        account_id: account?.id || null, // Link to existing account if provided, otherwise null (will be set after finalize-verification)
         verification_type: createVerificationDto.verificationType || 'multi',
         user_email: createVerificationDto.userEmail,
         user_phone: createVerificationDto.userPhone,
@@ -247,21 +250,8 @@ export class VerificationsService {
       } as any),
     });
 
-    // 4) Update account status if linked
-    if (verification.account_id) {
-      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
-        identity: result.providerData?.parsedResult?.data ? {
-          firstName: result.providerData?.parsedResult?.data?.first_name,
-          middleName: result.providerData?.parsedResult?.data?.middle_name,
-          lastName: result.providerData?.parsedResult?.data?.last_name,
-          dateOfBirth: result.providerData?.parsedResult?.data?.birth_date,
-        } : undefined,
-        document: {
-          type: 'philsys_pcn',
-          number: dto.pcn,
-        },
-      });
-    }
+    // 4) Account saving is now handled only after finalize-verification when status is 'verified'
+    // Do not update account here - verification status is 'processing' until finalized
 
     // 5) Publish websocket update
     try {
@@ -310,6 +300,23 @@ export class VerificationsService {
     // Emit progress
     await this.eventPublisher.publishProgress(verification.id, 'document_verification', 20);
 
+    // Save images to file system with step type prefix
+    const stepType = 'document_verification';
+    const frontImageInfo = await this.fileStorageService.saveBase64Image(
+      params.imageFrontSide,
+      verification.id,
+      `${stepType}-front`
+    );
+    
+    let backImageInfo = null;
+    if (params.imageBackSide) {
+      backImageInfo = await this.fileStorageService.saveBase64Image(
+        params.imageBackSide,
+        verification.id,
+        `${stepType}-back`
+      );
+    }
+
     // 2) Call IDmeta Document Verification
     const result = await providerInstance.verifyDocument({
       imageFrontSide: params.imageFrontSide,
@@ -318,22 +325,47 @@ export class VerificationsService {
       verificationId: verification.external_verification_id,
     });
 
+    // Store image URLs and metadata organized by step type (stepType already defined above)
+    const imagesMetadata = {
+      front: {
+        url: frontImageInfo.url,
+        mimeType: frontImageInfo.mimeType,
+        size: frontImageInfo.size,
+      },
+      ...(backImageInfo && {
+        back: {
+          url: backImageInfo.url,
+          mimeType: backImageInfo.mimeType,
+          size: backImageInfo.size,
+        },
+      }),
+    };
+
+    // Preserve existing verification steps and add/update this step
+    const existingMetadata = verification.metadata || {};
+    const existingSteps = existingMetadata.verification_steps || {};
+
     // 3) Update verification with latest status and provider data
     await this.verificationRepository.update(verification.id, {
       status: result.status as any,
       provider_response: result.providerData,
       validated_user_data: result.providerData?.parsedResult?.data ?? result.providerData?.parsedResult,
+      metadata: ({
+        ...existingMetadata,
+        request_type: stepType, // Current step type
+        verification_steps: {
+          ...existingSteps,
+          [stepType]: {
+            images: imagesMetadata,
+            completedAt: new Date().toISOString(),
+          },
+        },
+      } as any),
       updated_at: new Date(),
     });
 
-    // 4) Update account status if linked
-    if (verification.account_id) {
-      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
-        document: {
-          type: 'document_verification',
-        },
-      });
-    }
+    // 4) Account saving is now handled only after finalize-verification when status is 'verified'
+    // Do not update account here - verification status is 'processing' until finalized
 
     // 5) Publish websocket update
     try {
@@ -396,14 +428,8 @@ export class VerificationsService {
       } as any),
     });
 
-    if (verification.account_id) {
-      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
-        document: {
-          type: 'ph_lto_drivers_license',
-          number: dto.licenseNo,
-        },
-      });
-    }
+    // Account saving is now handled only after finalize-verification when status is 'verified'
+    // Do not update account here - verification status is 'processing' until finalized
 
     try {
       await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
@@ -466,14 +492,8 @@ export class VerificationsService {
       } as any),
     });
 
-    if (verification.account_id) {
-      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
-        document: {
-          type: 'ph_national_police',
-          number: dto.clearanceNo,
-        },
-      });
-    }
+    // Account saving is now handled only after finalize-verification when status is 'verified'
+    // Do not update account here - verification status is 'processing' until finalized
 
     try {
       await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
@@ -534,14 +554,8 @@ export class VerificationsService {
       } as any),
     });
 
-    if (verification.account_id) {
-      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
-        document: {
-          type: 'ph_nbi',
-          number: dto.clearanceNo,
-        },
-      });
-    }
+    // Account saving is now handled only after finalize-verification when status is 'verified'
+    // Do not update account here - verification status is 'processing' until finalized
 
     try {
       await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
@@ -612,14 +626,8 @@ export class VerificationsService {
       } as any),
     });
 
-    if (verification.account_id) {
-      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
-        document: {
-          type: 'ph_prc',
-          profession: dto.profession,
-        },
-      });
-    }
+    // Account saving is now handled only after finalize-verification when status is 'verified'
+    // Do not update account here - verification status is 'processing' until finalized
 
     try {
       await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
@@ -680,14 +688,8 @@ export class VerificationsService {
       } as any),
     });
 
-    if (verification.account_id) {
-      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
-        document: {
-          type: 'ph_sss',
-          number: dto.crnSsNumber,
-        },
-      });
-    }
+    // Account saving is now handled only after finalize-verification when status is 'verified'
+    // Do not update account here - verification status is 'processing' until finalized
 
     try {
       await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
@@ -729,6 +731,19 @@ export class VerificationsService {
 
     await this.eventPublisher.publishProgress(verification.id, 'biometrics_face_match', 25);
 
+    // Save images to file system with step type prefix
+    const stepType = 'biometrics_face_match';
+    const image1Info = await this.fileStorageService.saveBase64Image(
+      dto.image1,
+      verification.id,
+      `${stepType}-image1`
+    );
+    const image2Info = await this.fileStorageService.saveBase64Image(
+      dto.image2,
+      verification.id,
+      `${stepType}-image2`
+    );
+
     const result = await providerInstance.biometricsFaceMatch({
       image1: dto.image1,
       image2: dto.image2,
@@ -736,26 +751,46 @@ export class VerificationsService {
       verificationId: verification.external_verification_id,
     });
 
+    // Store image URLs and metadata organized by step type (stepType already defined above)
+    const imagesMetadata = {
+      image1: {
+        url: image1Info.url,
+        mimeType: image1Info.mimeType,
+        size: image1Info.size,
+      },
+      image2: {
+        url: image2Info.url,
+        mimeType: image2Info.mimeType,
+        size: image2Info.size,
+      },
+    };
+
+    // Preserve existing verification steps and add/update this step
+    const existingMetadata = verification.metadata || {};
+    const existingSteps = existingMetadata.verification_steps || {};
+    
     await this.verificationRepository.update(verification.id, {
       status: result.status as any,
       provider_response: result.providerData,
       validated_user_data: result.providerData?.result,
       metadata: ({
-        ...(verification.user_metadata || verification.metadata || {}),
-        request_type: 'biometrics_face_match',
+        ...existingMetadata,
+        request_type: stepType, // Current step type
         flow: 'compliance',
         score: result.providerData?.score,
+        verification_steps: {
+          ...existingSteps,
+          [stepType]: {
+            images: imagesMetadata,
+            score: result.providerData?.score,
+            completedAt: new Date().toISOString(),
+          },
+        },
       } as any),
     });
 
-    if (verification.account_id) {
-      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
-        biometrics: {
-          type: 'face_match',
-          score: result.providerData?.score,
-        },
-      });
-    }
+    // Account saving is now handled only after finalize-verification when status is 'verified'
+    // Do not update account here - verification status is 'processing' until finalized
 
     try {
       await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
@@ -797,6 +832,14 @@ export class VerificationsService {
 
     await this.eventPublisher.publishProgress(verification.id, 'biometrics_registration', 25);
 
+    // Save image to file system with step type prefix
+    const stepType = 'biometrics_registration';
+    const imageInfo = await this.fileStorageService.saveBase64Image(
+      dto.image,
+      verification.id,
+      `${stepType}-image`
+    );
+
     const result = await providerInstance.biometricsRegistration({
       username: dto.username,
       image: dto.image,
@@ -804,27 +847,41 @@ export class VerificationsService {
       verificationId: verification.external_verification_id,
     });
 
+    // Store image URL and metadata organized by step type (stepType already defined above)
+    const imageMetadata = {
+      url: imageInfo.url,
+      mimeType: imageInfo.mimeType,
+      size: imageInfo.size,
+    };
+
+    // Preserve existing verification steps and add/update this step
+    const existingMetadata = verification.metadata || {};
+    const existingSteps = existingMetadata.verification_steps || {};
+
     await this.verificationRepository.update(verification.id, {
       status: result.status as any,
       provider_response: result.providerData,
       validated_user_data: result.providerData?.result,
       metadata: ({
-        ...(verification.user_metadata || verification.metadata || {}),
-        request_type: 'biometrics_registration',
+        ...existingMetadata,
+        request_type: stepType, // Current step type
         flow: 'compliance',
         username: dto.username,
         faceId: result.providerData?.result?.result?.faceId,
+        verification_steps: {
+          ...existingSteps,
+          [stepType]: {
+            image: imageMetadata,
+            username: dto.username,
+            faceId: result.providerData?.result?.result?.faceId,
+            completedAt: new Date().toISOString(),
+          },
+        },
       } as any),
     });
 
-    if (verification.account_id) {
-      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
-        biometrics: {
-          type: 'registration',
-          faceId: result.providerData?.result?.result?.faceId,
-        },
-      });
-    }
+    // Account saving is now handled only after finalize-verification when status is 'verified'
+    // Do not update account here - verification status is 'processing' until finalized
 
     try {
       await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
@@ -866,31 +923,55 @@ export class VerificationsService {
 
     await this.eventPublisher.publishProgress(verification.id, 'custom_document', 25);
 
+    // Save document image to file system with step type prefix if provided
+    const stepType = 'custom_document';
+    let documentInfo = null;
+    if (dto.document) {
+      documentInfo = await this.fileStorageService.saveBase64Image(
+        dto.document,
+        verification.id,
+        `${stepType}-document`
+      );
+    }
+
     const result = await providerInstance.customDocument({
       document: dto.document,
       templateId: dto.templateId,
       verificationId: verification.external_verification_id,
     });
 
+    // Store document URL and metadata organized by step type (stepType already defined above)
+    const documentMetadata = documentInfo ? {
+      url: documentInfo.url,
+      mimeType: documentInfo.mimeType,
+      size: documentInfo.size,
+    } : null;
+
+    // Preserve existing verification steps and add/update this step
+    const existingMetadata = verification.metadata || {};
+    const existingSteps = existingMetadata.verification_steps || {};
+
     await this.verificationRepository.update(verification.id, {
       status: result.status as any,
       provider_response: result.providerData,
       validated_user_data: result.providerData?.formData,
       metadata: ({
-        ...(verification.user_metadata || verification.metadata || {}),
-        request_type: 'custom_document',
+        ...existingMetadata,
+        request_type: stepType, // Current step type
         flow: 'customize',
+        verification_steps: {
+          ...existingSteps,
+          [stepType]: {
+            ...(documentMetadata && { document: documentMetadata }),
+            formData: result.providerData?.formData,
+            completedAt: new Date().toISOString(),
+          },
+        },
       } as any),
     });
 
-    if (verification.account_id) {
-      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
-        document: {
-          type: 'custom',
-          extractedData: result.providerData?.formData,
-        },
-      });
-    }
+    // Account saving is now handled only after finalize-verification when status is 'verified'
+    // Do not update account here - verification status is 'processing' until finalized
 
     try {
       await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
@@ -932,6 +1013,25 @@ export class VerificationsService {
 
     await this.eventPublisher.publishProgress(verification.id, 'biometric_verification', 25);
 
+    // Save image to file system with step type prefix (prefer image over imageBase64)
+    const stepType = 'biometric_verification';
+    let imageInfo = null;
+    if (dto.image) {
+      imageInfo = await this.fileStorageService.saveBase64Image(
+        dto.image,
+        verification.id,
+        `${stepType}-image`
+      );
+    } else if (dto.imageBase64) {
+      // Convert plain base64 to data URI format
+      const dataUri = `data:image/jpeg;base64,${dto.imageBase64}`;
+      imageInfo = await this.fileStorageService.saveBase64Image(
+        dataUri,
+        verification.id,
+        `${stepType}-image`
+      );
+    }
+
     const result = await providerInstance.biometricVerification({
       image: dto.image,
       imageBase64: dto.imageBase64,
@@ -939,28 +1039,41 @@ export class VerificationsService {
       verificationId: verification.external_verification_id,
     });
 
+    // Store image URL and metadata organized by step type (stepType already defined above)
+    const imageMetadata = imageInfo ? {
+      url: imageInfo.url,
+      mimeType: imageInfo.mimeType,
+      size: imageInfo.size,
+    } : null;
+
+    // Preserve existing verification steps and add/update this step
+    const existingMetadata = verification.metadata || {};
+    const existingSteps = existingMetadata.verification_steps || {};
+
     await this.verificationRepository.update(verification.id, {
       status: result.status as any,
       provider_response: result.providerData,
       validated_user_data: result.providerData?.result,
       metadata: ({
-        ...(verification.user_metadata || verification.metadata || {}),
-        request_type: 'biometric_verification',
+        ...existingMetadata,
+        request_type: stepType, // Current step type
         flow: 'compliance',
         probability: result.providerData?.probability,
         faceId: result.providerData?.faceId,
+        verification_steps: {
+          ...existingSteps,
+          [stepType]: {
+            ...(imageMetadata && { image: imageMetadata }),
+            probability: result.providerData?.probability,
+            faceId: result.providerData?.faceId,
+            completedAt: new Date().toISOString(),
+          },
+        },
       } as any),
     });
 
-    if (verification.account_id) {
-      await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, {
-        biometrics: {
-          type: 'verification',
-          probability: result.providerData?.probability,
-          faceId: result.providerData?.faceId,
-        },
-      });
-    }
+    // Account saving is now handled only after finalize-verification when status is 'verified'
+    // Do not update account here - verification status is 'processing' until finalized
 
     try {
       await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
@@ -995,9 +1108,41 @@ export class VerificationsService {
       (verification as any).provider_response ??
       null;
 
+    // Extract images from metadata - aggregate all verification steps
+    const metadata = verification.metadata || {};
+    const verificationSteps = metadata.verification_steps || {};
+    
+    // Build images object with all steps
+    const allImages: Record<string, any> = {};
+    
+    // Add images from each verification step
+    Object.keys(verificationSteps).forEach(stepType => {
+      const step = verificationSteps[stepType];
+      if (step.images) {
+        // Multiple images (e.g., face match, document verification)
+        allImages[stepType] = { images: step.images };
+      } else if (step.image) {
+        // Single image (e.g., registration, verification)
+        allImages[stepType] = { image: step.image };
+      } else if (step.document) {
+        // Custom document
+        allImages[stepType] = { document: step.document };
+      }
+    });
+
+    // For backward compatibility, also include current step's images at root level
+    const currentStepImages = metadata.images || metadata.image || metadata.document ? {
+      ...(metadata.images && { images: metadata.images }),
+      ...(metadata.image && { image: metadata.image }),
+      ...(metadata.document && { document: metadata.document }),
+    } : null;
+
     return {
       ...verification,
       result,
+      images: Object.keys(allImages).length > 0 ? allImages : currentStepImages, // Include all images organized by step
+      verificationSteps: verificationSteps, // Include full step information
+      requestType: metadata.request_type, // Most recent step type
     } as any;
   }
 
@@ -1063,6 +1208,35 @@ export class VerificationsService {
   async getVerificationStatus(verificationId: string, tenantId?: string) {
     const verification = await this.getVerification(verificationId, tenantId);
     
+    // Extract images from metadata - aggregate all verification steps
+    const metadata = verification.metadata || {};
+    const verificationSteps = metadata.verification_steps || {};
+    
+    // Build images object with all steps
+    const allImages: Record<string, any> = {};
+    
+    // Add images from each verification step
+    Object.keys(verificationSteps).forEach(stepType => {
+      const step = verificationSteps[stepType];
+      if (step.images) {
+        // Multiple images (e.g., face match, document verification)
+        allImages[stepType] = { images: step.images };
+      } else if (step.image) {
+        // Single image (e.g., registration, verification)
+        allImages[stepType] = { image: step.image };
+      } else if (step.document) {
+        // Custom document
+        allImages[stepType] = { document: step.document };
+      }
+    });
+
+    // For backward compatibility, also include current step's images at root level
+    const currentStepImages = metadata.images || metadata.image || metadata.document ? {
+      ...(metadata.images && { images: metadata.images }),
+      ...(metadata.image && { image: metadata.image }),
+      ...(metadata.document && { document: metadata.document }),
+    } : null;
+    
     return {
       id: verification.id,
       externalVerificationId: verification.external_verification_id,
@@ -1073,6 +1247,9 @@ export class VerificationsService {
       confidence: verification.confidence_score,
       isOverridden: verification.is_overridden,
       sessionUrl: verification.external_workflow_url,
+      images: Object.keys(allImages).length > 0 ? allImages : currentStepImages, // All images organized by step
+      verificationSteps: verificationSteps, // Full step information with timestamps
+      requestType: metadata.request_type, // Most recent step type
       createdAt: verification.created_at,
       updatedAt: verification.updated_at,
     };
@@ -1130,10 +1307,8 @@ export class VerificationsService {
         confidence_score: result.result?.overall?.confidence || 0,
       });
 
-      // Update account status if linked
-      if (verification.account_id) {
-        await this.updateAccountStatus(verification.account_id, result.status as any, verification.id, result.result);
-      }
+      // Account saving is now handled only after finalize-verification when status is 'verified'
+      // Do not update account here - verification status is 'processing' until finalized
 
       // Broadcast WebSocket update
       await this.eventPublisher.publishCompleted(verification.id, result.status as any, result.result);
@@ -1146,10 +1321,8 @@ export class VerificationsService {
         provider_response: { error: error.message },
       });
 
-      // Update account status to rejected if linked
-      if (verification.account_id) {
-        await this.updateAccountStatus(verification.account_id, 'rejected', verification.id);
-      }
+      // Account saving is now handled only after finalize-verification when status is 'verified'
+      // Do not update account here on error - verification failed
 
       // Broadcast WebSocket update for error
       await this.eventPublisher.publishCompleted(verification.id, 'rejected', { error: error.message });
@@ -1197,7 +1370,305 @@ export class VerificationsService {
     return this.accountRepository.save(account);
   }
 
-  // Helper method to update account status after verification
+  async finalizeVerification(tenantId: string, dto: FinalizeVerificationDto) {
+    const verification = await this.getVerification(dto.verificationId, tenantId);
+    const { providerInstance, providerEntity, assignment } = await this.getProviderForTenant(tenantId);
+
+    if (!(providerInstance instanceof IDmetaProvider)) {
+      throw new BadRequestException('Finalize Verification is only supported for IDmeta provider');
+    }
+
+    if (!providerInstance.isInitialized) {
+      await providerInstance.initialize(
+        {
+          apiKey: providerEntity.api_key,
+          secretKey: providerEntity.secret_key,
+          webhookSecret: providerEntity.webhook_secret,
+          baseUrl: providerEntity.base_url,
+          apiVersion: providerEntity.api_version || 'v1',
+        },
+        {
+          timeout: (providerEntity.config as any)?.timeout || 30000,
+          retryAttempts: (providerEntity.config as any)?.retryAttempts || 3,
+          ...assignment.tenant_overrides,
+        }
+      );
+    }
+
+    if (!verification.external_verification_id) {
+      throw new BadRequestException('Verification is not initialized with IDmeta. Initiate a session first to obtain external_verification_id.');
+    }
+
+    await this.eventPublisher.publishProgress(verification.id, 'finalize_verification', 50);
+
+    const result = await providerInstance.finalizeVerification({
+      templateId: dto.templateId,
+      verificationId: verification.external_verification_id, // Use external ID from verification
+    });
+
+    // Update verification with final status
+    await this.verificationRepository.update(verification.id, {
+      status: result.status as any,
+      provider_response: result.providerData,
+    });
+
+    // Reload verification to get updated data
+    const reloadedVerification = await this.verificationRepository.findOne({
+      where: { id: verification.id },
+    });
+
+    // Save/update account ONLY if status is 'verified'
+    if (result.status === 'verified') {
+      await this.saveAccountFromVerification(tenantId, reloadedVerification);
+    }
+
+    try {
+      await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
+    } catch (e) {
+      this.logger.warn(`Failed to publish websocket event for verification ${verification.id}: ${e.message}`);
+    }
+
+    return {
+      id: verification.id,
+      status: result.status,
+      finalized: result.providerData.finalized,
+      statusMessage: result.providerData.status_message,
+      missingPlans: result.providerData.missing_plans,
+    };
+  }
+
+  async manualFinalizeVerification(tenantId: string, dto: ManualFinalizeVerificationDto) {
+    const verification = await this.getVerification(dto.verificationId, tenantId);
+    const { providerInstance, providerEntity, assignment } = await this.getProviderForTenant(tenantId);
+
+    if (!(providerInstance instanceof IDmetaProvider)) {
+      throw new BadRequestException('Manual Finalize Verification is only supported for IDmeta provider');
+    }
+
+    if (!providerInstance.isInitialized) {
+      await providerInstance.initialize(
+        {
+          apiKey: providerEntity.api_key,
+          secretKey: providerEntity.secret_key,
+          webhookSecret: providerEntity.webhook_secret,
+          baseUrl: providerEntity.base_url,
+          apiVersion: providerEntity.api_version || 'v1',
+        },
+        {
+          timeout: (providerEntity.config as any)?.timeout || 30000,
+          retryAttempts: (providerEntity.config as any)?.retryAttempts || 3,
+          ...assignment.tenant_overrides,
+        }
+      );
+    }
+
+    if (!verification.external_verification_id) {
+      throw new BadRequestException('Verification is not initialized with IDmeta. Initiate a session first to obtain external_verification_id.');
+    }
+
+    await this.eventPublisher.publishProgress(verification.id, 'manual_finalize_verification', 50);
+
+    const result = await providerInstance.manualFinalizeVerification({
+      templateId: dto.templateId,
+      verificationId: verification.external_verification_id, // Use external ID from verification
+    });
+
+    // Update verification with final status
+    await this.verificationRepository.update(verification.id, {
+      status: result.status as any,
+      provider_response: result.providerData,
+    });
+
+    // Reload verification to get updated data
+    const reloadedVerification = await this.verificationRepository.findOne({
+      where: { id: verification.id },
+    });
+
+    // Save/update account ONLY if status is 'verified'
+    if (result.status === 'verified') {
+      await this.saveAccountFromVerification(tenantId, reloadedVerification);
+    }
+
+    try {
+      await this.eventPublisher.publishCompleted(verification.id, result.status, result.providerData);
+    } catch (e) {
+      this.logger.warn(`Failed to publish websocket event for verification ${verification.id}: ${e.message}`);
+    }
+
+    return {
+      id: verification.id,
+      status: result.status,
+      finalized: result.providerData.finalized,
+      statusMessage: result.providerData.status_message,
+      missingPlans: result.providerData.missing_plans,
+    };
+  }
+
+  /**
+   * Save or update account from verified verification
+   * This is called ONLY after finalize-verification when status is 'verified'
+   * Extracts user data from verification and properly maps to account entity
+   */
+  private async saveAccountFromVerification(
+    tenantId: string,
+    verification: any
+  ): Promise<void> {
+    try {
+      // Only save account if verification status is 'verified'
+      if (verification.status !== 'verified') {
+        this.logger.log(`Verification ${verification.id} status is ${verification.status}, skipping account save (only saves on 'verified')`);
+        return;
+      }
+
+      // Extract user data from multiple sources
+      const validatedUserData = verification.validated_user_data || {};
+      const providerResponse = verification.provider_response || {};
+      const userMetadata = verification.user_metadata || {};
+      
+      // Only check if account_id is already linked to this verification
+      // Otherwise, always create a new account (even if email/phone might be duplicates)
+      // Note: Email/phone may not be populated, so we don't use them to find existing accounts
+      let account = verification.account_id 
+        ? await this.accountRepository.findOne({ where: { id: verification.account_id } })
+        : null;
+
+      // Create new account if not already linked
+      // We always create a new account even if email/phone duplicates exist elsewhere
+      if (!account) {
+        account = this.accountRepository.create({
+          tenant_id: tenantId,
+          email: verification.user_email,
+          phone: verification.user_phone,
+          metadata: userMetadata,
+          verification_status: 'verified',
+        });
+        this.logger.log(`Creating new account for verified verification ${verification.id}`);
+      } else {
+        this.logger.log(`Updating existing linked account ${account.id} from verified verification ${verification.id}`);
+      }
+
+      // Extract identity data from multiple possible structures
+      const identityData = validatedUserData?.identity || 
+                         validatedUserData?.person ||
+                         providerResponse?.identity || 
+                         providerResponse?.person ||
+                         providerResponse?.parsedResult?.person ||
+                         providerResponse?.parsedResult?.data ||
+                         providerResponse?.verification?.person ||
+                         providerResponse?.fullResponse?.person ||
+                         userMetadata?.identity ||
+                         {};
+
+      // Extract document data
+      const documentData = validatedUserData?.document || 
+                         providerResponse?.document ||
+                         providerResponse?.documentDetails ||
+                         providerResponse?.parsedResult?.document ||
+                         providerResponse?.verification?.document ||
+                         {};
+
+      // Build verified_data object
+      const verifiedData: Record<string, any> = {
+        ...validatedUserData,
+        ...providerResponse,
+        providerResponse,
+        verificationId: verification.id,
+        externalVerificationId: verification.external_verification_id,
+        verifiedAt: new Date().toISOString(),
+      };
+
+      // Update account with verified data
+      account.verification_status = 'verified';
+      account.last_verification_id = verification.id;
+      account.verified_data = verifiedData;
+
+      // Update name (extract from various possible fields)
+      const firstName = identityData.firstName || identityData.first_name || identityData.first || 
+                       validatedUserData?.first_name || providerResponse?.first_name || '';
+      const middleName = identityData.middleName || identityData.middle_name || identityData.middle || 
+                        validatedUserData?.middle_name || providerResponse?.middle_name || '';
+      const lastName = identityData.lastName || identityData.last_name || identityData.last || 
+                      validatedUserData?.last_name || providerResponse?.last_name || '';
+
+      if (firstName || lastName) {
+        account.name = {
+          first: firstName,
+          middle: middleName,
+          last: lastName,
+        };
+      }
+
+      // Update email (always update from verification if available - verification is source of truth)
+      if (verification.user_email || identityData.email || providerResponse?.email) {
+        account.email = verification.user_email || identityData.email || providerResponse?.email || account.email;
+      }
+
+      // Update phone (always update from verification if available - verification is source of truth)
+      if (verification.user_phone || identityData.phone || identityData.phoneNumber || providerResponse?.phone) {
+        account.phone = verification.user_phone || identityData.phone || identityData.phoneNumber || providerResponse?.phone || account.phone;
+      }
+
+      // Update birthdate (always update from verification if available - verification is source of truth)
+      const dob = identityData.dateOfBirth || identityData.date_of_birth || identityData.birthdate || 
+                 validatedUserData?.birth_date || validatedUserData?.date_of_birth || 
+                 providerResponse?.date_of_birth || providerResponse?.birth_date;
+      if (dob) {
+        account.birthdate = new Date(dob);
+      }
+
+      // Update address (always update from verification if available - verification is source of truth)
+      const addressData = identityData.address || validatedUserData?.address || providerResponse?.address;
+      if (addressData) {
+        account.address = {
+          street: addressData.street || addressData.streetAddress || addressData.address_line1 || account.address?.street || '',
+          city: addressData.city || addressData.city_name || account.address?.city || '',
+          state: addressData.state || addressData.stateProvince || addressData.province || account.address?.state || '',
+          country: addressData.country || addressData.countryCode || addressData.country_name || account.address?.country || '',
+          postalCode: addressData.postalCode || addressData.postCode || addressData.zipCode || addressData.zip || account.address?.postalCode || '',
+        };
+      }
+
+      // Store document information in metadata
+      if (documentData && Object.keys(documentData).length > 0) {
+        if (!account.metadata) {
+          account.metadata = {};
+        }
+        account.metadata.verifiedDocument = {
+          ...documentData,
+          verifiedAt: new Date().toISOString(),
+        };
+      }
+
+      // Merge additional metadata
+      if (userMetadata && Object.keys(userMetadata).length > 0) {
+        if (!account.metadata) {
+          account.metadata = {};
+        }
+        account.metadata = {
+          ...account.metadata,
+          ...userMetadata,
+          lastVerifiedAt: new Date().toISOString(),
+        };
+      }
+
+      // Save account
+      await this.accountRepository.save(account);
+
+      // Link account to verification if not already linked
+      if (verification.account_id !== account.id) {
+        await this.verificationRepository.update(verification.id, {
+          account_id: account.id,
+        });
+      }
+
+      this.logger.log(`Successfully saved account ${account.id} from verified verification ${verification.id}`);
+    } catch (error) {
+      this.logger.error(`Failed to save account from verification ${verification.id}:`, error);
+      throw error;
+    }
+  }
+
+  // Helper method to update account status after verification (deprecated - use saveAccountFromVerification instead)
   private async updateAccountStatus(
     accountId: string,
     status: string,
@@ -1213,7 +1684,7 @@ export class VerificationsService {
 
     // Map verification status to account status
     const accountStatus: 'unverified' | 'pending' | 'verified' | 'rejected' = 
-      status === 'approved' ? 'verified' :
+      status === 'approved' || status === 'verified' ? 'verified' :
       status === 'rejected' ? 'rejected' :
       status === 'pending' || status === 'processing' ? 'pending' :
       'unverified';

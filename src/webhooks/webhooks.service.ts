@@ -379,7 +379,6 @@ export class WebhooksService {
       this.logger.log(`Updated account ${accountId} status to ${accountStatus} from verification ${verificationId}`);
     } catch (error) {
       this.logger.error(`Failed to update account ${accountId} from verification`, error);
-      // Don't throw - webhook processing should continue even if account update fails
     }
   }
 }

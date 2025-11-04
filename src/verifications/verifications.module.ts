@@ -8,6 +8,7 @@ import { VerificationsService } from './verifications.service';
 import { VerificationsController } from './verifications.controller';
 import { ProvidersModule } from '../providers/providers.module';
 import { WebSocketModule } from '../websocket/websocket.module';
+import { CommonModule } from '../common/common.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { WebSocketModule } from '../websocket/websocket.module';
     })] : []),
     ProvidersModule,
     WebSocketModule,
+    CommonModule,
   ],
   providers: [VerificationsService],
   controllers: [VerificationsController],

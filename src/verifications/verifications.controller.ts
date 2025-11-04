@@ -15,6 +15,8 @@ import { BiometricsFaceMatchDto } from './dto/biometrics-face-match.dto';
 import { BiometricsRegistrationDto } from './dto/biometrics-registration.dto';
 import { BiometricVerificationDto } from './dto/biometric-verification.dto';
 import { CustomDocumentDto } from './dto/custom-document.dto';
+import { FinalizeVerificationDto } from './dto/finalize-verification.dto';
+import { ManualFinalizeVerificationDto } from './dto/manual-finalize-verification.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiKeyAuthGuard } from '../auth/guards/api-key-auth.guard';
 import { JwtOrApiKeyGuard } from '../auth/guards/jwt-or-api-key.guard';
@@ -108,7 +110,8 @@ export class VerificationsController {
   }
 
   @Post(':id/document')
-  @UseGuards(ApiKeyAuthGuard)
+  @UseGuards(JwtOrApiKeyGuard)
+  @ApiBearerAuth()
   @ApiSecurity('api-key')
   @ApiOperation({ summary: 'Run Document Verification for an initialized verification' })
   @ApiResponse({ status: 200, description: 'Document verification executed' })
@@ -242,6 +245,26 @@ export class VerificationsController {
   @ApiResponse({ status: 200, description: 'Custom document verification executed' })
   async customDocument(@Body() dto: CustomDocumentDto, @Request() req) {
     return this.verificationsService.customDocument(req.user.tenantId, dto);
+  }
+
+  @Post('finalize')
+  @UseGuards(JwtOrApiKeyGuard)
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
+  @ApiOperation({ summary: 'Finalize Verification - Evaluate all verification checks and set final status' })
+  @ApiResponse({ status: 200, description: 'Verification finalized successfully' })
+  async finalizeVerification(@Body() dto: FinalizeVerificationDto, @Request() req) {
+    return this.verificationsService.finalizeVerification(req.user.tenantId, dto);
+  }
+
+  @Post('manual-finalize')
+  @UseGuards(JwtOrApiKeyGuard)
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
+  @ApiOperation({ summary: 'Manual Finalize Verification - Manually finalize a verification' })
+  @ApiResponse({ status: 200, description: 'Verification manually finalized successfully' })
+  async manualFinalizeVerification(@Body() dto: ManualFinalizeVerificationDto, @Request() req) {
+    return this.verificationsService.manualFinalizeVerification(req.user.tenantId, dto);
   }
 }
 

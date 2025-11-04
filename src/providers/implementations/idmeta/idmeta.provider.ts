@@ -3,6 +3,11 @@ import { IKycProvider, ProviderType, ProcessingMethod, ProviderCredentials, Prov
 import { IDmetaHttpClient } from './idmeta-http.client';
 import { IDmetaRequestMapper } from './mappers/idmeta-request.mapper';
 import { IDmetaResponseMapper } from './mappers/idmeta-response.mapper';
+import {
+  VerificationStatus,
+  normalizeProviderStatus,
+  getLegacyStatusForStorage,
+} from '../../../common/verification-status.enum';
 
 @Injectable()
 export class IDmetaProvider implements IKycProvider {
@@ -192,6 +197,7 @@ export class IDmetaProvider implements IKycProvider {
     templateId: string;
     verificationId: string; // IDmeta external verification id
   }): Promise<{ status: string; providerData: any }> {
+    // HTTP client now handles data URI extraction and FormData conversion
     const response = await this.httpClient.documentVerification({
       imageFrontSide: params.imageFrontSide,
       imageBackSide: params.imageBackSide,
@@ -199,8 +205,25 @@ export class IDmetaProvider implements IKycProvider {
       verification_id: params.verificationId,
     });
 
+    // Check if response indicates an extraction failure
+    const responseMessage = (response as any)?.message || '';
+    const hasExtractionError = responseMessage.toLowerCase().includes('extraction failed') ||
+                                responseMessage.toLowerCase().includes('invalid id') ||
+                                responseMessage.toLowerCase().includes('document is not valid') ||
+                                responseMessage.toLowerCase().includes('must be an image');
+
     // Normalize various status shapes into our internal statuses
-    const rawStatus = (response as any)?.status;
+    let rawStatus = (response as any)?.status;
+    
+    // If IDmeta indicates extraction failed or invalid image, treat as rejected
+    if (hasExtractionError) {
+      rawStatus = 'rejected';
+      this.logger.warn(`IDmeta document extraction failed: ${responseMessage}`);
+    } else if (rawStatus === false) {
+      // status: false also indicates failure
+      rawStatus = 'rejected';
+    }
+    
     const status = this.mapStatus(
       typeof rawStatus === 'string' ? rawStatus : rawStatus === true ? 'completed' : 'processing'
     );
@@ -209,6 +232,7 @@ export class IDmetaProvider implements IKycProvider {
     const providerData = {
       fullResponse: response,
       parsedResult: (response as any)?.result ?? response,
+      extractionError: hasExtractionError ? responseMessage : undefined,
     };
 
     return { status, providerData };
@@ -375,54 +399,40 @@ export class IDmetaProvider implements IKycProvider {
   }
 
   private mapPhilsysStatus(statusCode: number, statusMessage: string, result: any): string {
-    if (statusCode === 3 || statusMessage === 'VERIFIED') return 'approved';
-    if (statusCode === 1 || statusMessage === 'REJECTED') return 'rejected';
-    return 'processing';
+    // Use common status enum to normalize provider-specific status
+    const numericStatus = normalizeProviderStatus(statusCode, statusMessage, {
+      providerName: 'IDmeta',
+      result,
+    });
+
+    // Convert back to legacy string format for backward compatibility with database
+    return getLegacyStatusForStorage(numericStatus);
   }
 
   private mapGovernmentDataStatus(status: number | string, statusMessage?: string, result?: any): string {
-    // Handle numeric status codes
-    if (typeof status === 'number') {
-      if (status === 3 || status === 200) return 'approved';
-      if (status === 1 || status === 400 || status === 404) return 'rejected';
-      return 'processing';
-    }
+    // Use common status enum to normalize provider-specific status
+    const numericStatus = normalizeProviderStatus(status, statusMessage, {
+      providerName: 'IDmeta',
+      result,
+    });
 
-    // Handle string statuses
-    if (typeof status === 'string') {
-      const upperStatus = status.toUpperCase();
-      if (upperStatus === 'VERIFIED' || upperStatus === 'APPROVED' || upperStatus === 'SUCCESS') return 'approved';
-      if (upperStatus === 'REJECTED' || upperStatus === 'FAILED' || upperStatus === 'INVALID') return 'rejected';
-      return 'processing';
-    }
-
-    // Check status message
-    if (statusMessage) {
-      const upperMessage = statusMessage.toUpperCase();
-      if (upperMessage === 'VERIFIED' || upperMessage === 'APPROVED') return 'approved';
-      if (upperMessage === 'REJECTED' || upperMessage === 'FAILED') return 'rejected';
-    }
-
-    return 'processing';
+    // Convert back to legacy string format for backward compatibility with database
+    return getLegacyStatusForStorage(numericStatus);
   }
 
   private mapBiometricsStatus(status: boolean, result?: any): string {
-    // Handle boolean status
-    if (status === true) {
-      // Check result status if available
-      if (result?.status) {
-        const upperStatus = result.status.toUpperCase();
-        if (upperStatus === 'SUCCESS') return 'approved';
-        if (upperStatus === 'FAILED' || upperStatus === 'ERROR') return 'rejected';
-      }
-      // Check score for face match (typically 70+ is a match)
-      if (result?.score !== undefined) {
-        if (result.score >= 70) return 'approved';
-        return 'rejected';
-      }
-      return 'approved';
-    }
-    return 'rejected';
+    // Use common status enum to normalize provider-specific status
+    // For async biometrics operations, we should rely on webhooks for final status
+    // If the API call succeeds (status === true), return 'processing' and wait for webhook
+    // Only return 'rejected' immediately if there's a clear error
+    
+    const numericStatus = normalizeProviderStatus(status, undefined, {
+      providerName: 'IDmeta',
+      result,
+    });
+
+    // Convert back to legacy string format for backward compatibility with database
+    return getLegacyStatusForStorage(numericStatus);
   }
 
   async biometricsFaceMatch(params: {
@@ -487,7 +497,12 @@ export class IDmetaProvider implements IKycProvider {
     });
 
     // Custom document returns status: true/false
-    const mappedStatus = response.status ? 'approved' : 'rejected';
+    // Use common status enum to normalize provider-specific status
+    const numericStatus = normalizeProviderStatus(response.status, undefined, {
+      providerName: 'IDmeta',
+      result: response.result,
+    });
+    const mappedStatus = getLegacyStatusForStorage(numericStatus);
 
     return {
       status: mappedStatus,
@@ -526,6 +541,74 @@ export class IDmetaProvider implements IKycProvider {
     };
   }
 
+  async finalizeVerification(params: {
+    templateId: string;
+    verificationId: string;
+  }): Promise<{ status: string; providerData: any }> {
+    const response = await this.httpClient.finalizeVerification({
+      template_id: params.templateId,
+      verification_id: params.verificationId,
+    });
+
+    // Map status from IDmeta response (status: number, status_message: string)
+    // Pass isFinalized: true to allow VERIFIED status
+    const numericStatus = normalizeProviderStatus(
+      response.status,
+      response.status_message,
+      {
+        providerName: 'IDmeta',
+        result: response.verification,
+        isFinalized: true, // This is a finalize call, so allow VERIFIED status
+      }
+    );
+    const mappedStatus = getLegacyStatusForStorage(numericStatus);
+
+    return {
+      status: mappedStatus,
+      providerData: {
+        fullResponse: response,
+        verification: response.verification,
+        missing_plans: response.missing_plans,
+        status_message: response.status_message,
+        finalized: response.finalized,
+      },
+    };
+  }
+
+  async manualFinalizeVerification(params: {
+    templateId: string;
+    verificationId: string;
+  }): Promise<{ status: string; providerData: any }> {
+    const response = await this.httpClient.manualFinalizeVerification({
+      template_id: params.templateId,
+      verification_id: params.verificationId,
+    });
+
+    // Map status from IDmeta response (status: number, status_message: string)
+    // Pass isFinalized: true to allow VERIFIED status
+    const numericStatus = normalizeProviderStatus(
+      response.status,
+      response.status_message,
+      {
+        providerName: 'IDmeta',
+        result: response.verification,
+        isFinalized: true, // This is a finalize call, so allow VERIFIED status
+      }
+    );
+    const mappedStatus = getLegacyStatusForStorage(numericStatus);
+
+    return {
+      status: mappedStatus,
+      providerData: {
+        fullResponse: response,
+        verification: response.verification,
+        missing_plans: response.missing_plans,
+        status_message: response.status_message,
+        finalized: response.finalized,
+      },
+    };
+  }
+
   private verifyWebhookSignature(payload: unknown, signature: string, secret: string): boolean {
     const crypto = require('crypto');
     const expectedSignature = crypto
@@ -540,15 +623,13 @@ export class IDmetaProvider implements IKycProvider {
   }
 
   private mapStatus(status: string): string {
-    const statusMap = {
-      'pending': 'pending',
-      'processing': 'processing',
-      'completed': 'approved',
-      'failed': 'rejected',
-      'expired': 'expired',
-    };
-    
-    return statusMap[status] || 'pending';
+    // Use common status enum to normalize provider-specific status
+    const numericStatus = normalizeProviderStatus(status, undefined, {
+      providerName: 'IDmeta',
+    });
+
+    // Convert back to legacy string format for backward compatibility with database
+    return getLegacyStatusForStorage(numericStatus);
   }
 }
 

@@ -21,10 +21,10 @@ export class Verification {
 
   @Column({ 
     type: 'enum', 
-    enum: ['pending', 'processing', 'needs_review', 'approved', 'rejected', 'expired', 'cancelled'],
+    enum: ['pending', 'processing', 'needs_review', 'approved', 'verified', 'rejected', 'expired', 'cancelled'],
     default: 'pending'
   })
-  status: 'pending' | 'processing' | 'needs_review' | 'approved' | 'rejected' | 'expired' | 'cancelled';
+  status: 'pending' | 'processing' | 'needs_review' | 'approved' | 'verified' | 'rejected' | 'expired' | 'cancelled';
 
   @Column()
   verification_type: string;

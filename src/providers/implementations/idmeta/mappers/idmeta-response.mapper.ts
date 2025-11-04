@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { VerificationStatusResponse } from '../../../interfaces/kyc-provider.interface';
 import { IDmetaStatusResponse } from '../idmeta-http.client';
+import {
+  normalizeProviderStatus,
+  getLegacyStatusForStorage,
+} from '../../../../common/verification-status.enum';
 
 @Injectable()
 export class IDmetaResponseMapper {
@@ -39,15 +43,13 @@ export class IDmetaResponseMapper {
   }
 
   private mapStatus(status: string): string {
-    const statusMap = {
-      'pending': 'pending',
-      'processing': 'processing',
-      'completed': 'approved',
-      'failed': 'rejected',
-      'expired': 'expired',
-    };
-    
-    return statusMap[status] || 'pending';
+    // Use common status enum to normalize provider-specific status
+    const numericStatus = normalizeProviderStatus(status, undefined, {
+      providerName: 'IDmeta',
+    });
+
+    // Convert back to legacy string format for backward compatibility with database
+    return getLegacyStatusForStorage(numericStatus);
   }
 
   private mapResult(result: any): any {

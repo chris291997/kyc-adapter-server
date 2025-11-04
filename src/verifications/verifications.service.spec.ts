@@ -9,6 +9,7 @@ import { Account } from '../database/entities/account.entity';
 import { ProvidersFactory } from '../providers/providers.factory';
 import { EventPublisher } from '../websocket/event-publisher.service';
 import { IDmetaProvider } from '../providers/implementations/idmeta/idmeta.provider';
+import { FileStorageService } from '../common/file-storage.service';
 import { CreateVerificationDto } from './dto/create-verification.dto';
 import { PhLtoDriversLicenseDto } from './dto/ph-lto-drivers-license.dto';
 import { PhNationalPoliceDto } from './dto/ph-national-police.dto';
@@ -19,6 +20,8 @@ import { BiometricsFaceMatchDto } from './dto/biometrics-face-match.dto';
 import { BiometricsRegistrationDto } from './dto/biometrics-registration.dto';
 import { BiometricVerificationDto } from './dto/biometric-verification.dto';
 import { CustomDocumentDto } from './dto/custom-document.dto';
+import { FinalizeVerificationDto } from './dto/finalize-verification.dto';
+import { ManualFinalizeVerificationDto } from './dto/manual-finalize-verification.dto';
 
 describe('VerificationsService', () => {
   let service: VerificationsService;
@@ -65,6 +68,12 @@ describe('VerificationsService', () => {
     publishCompleted: jest.fn().mockResolvedValue(undefined),
   };
 
+  const mockFileStorageService = {
+    saveBase64Image: jest.fn(),
+    deleteFile: jest.fn(),
+    deleteVerificationFiles: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -92,6 +101,10 @@ describe('VerificationsService', () => {
         {
           provide: EventPublisher,
           useValue: mockEventPublisher,
+        },
+        {
+          provide: FileStorageService,
+          useValue: mockFileStorageService,
         },
       ],
     }).compile();
@@ -191,8 +204,7 @@ describe('VerificationsService', () => {
       expect(mockProvidersFactory.getPrimaryProviderForTenant).toHaveBeenCalledWith(tenantId);
       expect(mockProvidersFactory.getProviderById).toHaveBeenCalledWith('mock-provider');
       expect(mockProvider.createVerification).toHaveBeenCalled();
-      expect(mockAccountRepository.create).toHaveBeenCalled();
-      expect(mockAccountRepository.save).toHaveBeenCalled();
+      // Account creation is no longer done in createVerification - accounts are only created after finalize-verification if status is 'verified'
       expect(mockVerificationRepository.create).toHaveBeenCalled();
       expect(mockVerificationRepository.save).toHaveBeenCalled();
     });
@@ -318,6 +330,8 @@ describe('VerificationsService', () => {
       biometricsFaceMatch: jest.fn(),
       biometricsRegistration: jest.fn(),
       biometricVerification: jest.fn(),
+      finalizeVerification: jest.fn(),
+      manualFinalizeVerification: jest.fn(),
       customDocument: jest.fn(),
     });
 
@@ -703,7 +717,7 @@ describe('VerificationsService', () => {
 
       it('should successfully perform biometrics face match', async () => {
         const mockResult = {
-          status: 'approved',
+          status: 'processing',
           providerData: {
             fullResponse: { status: true, message: 'OK' },
             result: { status: 'success', score: 99 },
@@ -711,11 +725,19 @@ describe('VerificationsService', () => {
           },
         };
 
+        mockFileStorageService.saveBase64Image.mockResolvedValue({
+          url: '/uploads/verifications/test/image1.jpg',
+          path: '/path/to/image1.jpg',
+          mimeType: 'image/jpeg',
+          size: 1024,
+        });
+
         (mockIDmetaProvider.biometricsFaceMatch as jest.Mock).mockResolvedValue(mockResult);
 
         const result = await service.biometricsFaceMatch(tenantId, dto);
 
-        expect(result).toEqual({ id: verificationId, status: 'approved' });
+        // Biometrics operations are async - return 'processing' and wait for webhook
+        expect(result).toEqual({ id: verificationId, status: 'processing' });
         expect(mockIDmetaProvider.initialize).toHaveBeenCalled();
         expect(mockIDmetaProvider.biometricsFaceMatch).toHaveBeenCalledWith({
           image1: dto.image1,
@@ -723,7 +745,10 @@ describe('VerificationsService', () => {
           templateId: dto.templateId,
           verificationId: externalVerificationId,
         });
-        expect(mockVerificationRepository.update).toHaveBeenCalled();
+        expect(mockVerificationRepository.update).toHaveBeenCalledWith(
+          verificationId,
+          expect.objectContaining({ status: 'processing' })
+        );
         expect(mockEventPublisher.publishProgress).toHaveBeenCalledWith(verificationId, 'biometrics_face_match', 25);
         expect(mockEventPublisher.publishCompleted).toHaveBeenCalled();
       });
@@ -748,6 +773,13 @@ describe('VerificationsService', () => {
           },
         };
 
+        mockFileStorageService.saveBase64Image.mockResolvedValue({
+          url: '/uploads/verifications/test/image1.jpg',
+          path: '/path/to/image1.jpg',
+          mimeType: 'image/jpeg',
+          size: 1024,
+        });
+
         (mockIDmetaProvider.biometricsFaceMatch as jest.Mock).mockResolvedValue(mockResult);
 
         const result = await service.biometricsFaceMatch(tenantId, dto);
@@ -770,7 +802,7 @@ describe('VerificationsService', () => {
 
       it('should successfully register biometrics', async () => {
         const mockResult = {
-          status: 'approved',
+          status: 'processing',
           providerData: {
             fullResponse: { status: true, message: 'OK' },
             result: {
@@ -787,11 +819,19 @@ describe('VerificationsService', () => {
           },
         };
 
+        mockFileStorageService.saveBase64Image.mockResolvedValue({
+          url: '/uploads/verifications/test/image.jpg',
+          path: '/path/to/image.jpg',
+          mimeType: 'image/jpeg',
+          size: 1024,
+        });
+
         (mockIDmetaProvider.biometricsRegistration as jest.Mock).mockResolvedValue(mockResult);
 
         const result = await service.biometricsRegistration(tenantId, dto);
 
-        expect(result).toEqual({ id: verificationId, status: 'approved' });
+        // Biometrics operations are async - return 'processing' and wait for webhook
+        expect(result).toEqual({ id: verificationId, status: 'processing' });
         expect(mockIDmetaProvider.initialize).toHaveBeenCalled();
         expect(mockIDmetaProvider.biometricsRegistration).toHaveBeenCalledWith({
           username: dto.username,
@@ -799,7 +839,10 @@ describe('VerificationsService', () => {
           templateId: dto.templateId,
           verificationId: externalVerificationId,
         });
-        expect(mockVerificationRepository.update).toHaveBeenCalled();
+        expect(mockVerificationRepository.update).toHaveBeenCalledWith(
+          verificationId,
+          expect.objectContaining({ status: 'processing' })
+        );
         expect(mockEventPublisher.publishProgress).toHaveBeenCalledWith(verificationId, 'biometrics_registration', 25);
         expect(mockEventPublisher.publishCompleted).toHaveBeenCalled();
       });
@@ -823,6 +866,13 @@ describe('VerificationsService', () => {
           },
         };
 
+        mockFileStorageService.saveBase64Image.mockResolvedValue({
+          url: '/uploads/verifications/test/image.jpg',
+          path: '/path/to/image.jpg',
+          mimeType: 'image/jpeg',
+          size: 1024,
+        });
+
         (mockIDmetaProvider.biometricsRegistration as jest.Mock).mockResolvedValue(mockResult);
 
         const result = await service.biometricsRegistration(tenantId, dto);
@@ -845,7 +895,7 @@ describe('VerificationsService', () => {
 
       it('should successfully perform biometric verification', async () => {
         const mockResult = {
-          status: 'approved',
+          status: 'processing',
           providerData: {
             fullResponse: { status: true, message: 'OK' },
             result: {
@@ -861,11 +911,19 @@ describe('VerificationsService', () => {
           },
         };
 
+        mockFileStorageService.saveBase64Image.mockResolvedValue({
+          url: '/uploads/verifications/test/image.jpg',
+          path: '/path/to/image.jpg',
+          mimeType: 'image/jpeg',
+          size: 1024,
+        });
+
         (mockIDmetaProvider.biometricVerification as jest.Mock).mockResolvedValue(mockResult);
 
         const result = await service.biometricVerification(tenantId, dto);
 
-        expect(result).toEqual({ id: verificationId, status: 'approved' });
+        // Biometrics operations are async - return 'processing' and wait for webhook
+        expect(result).toEqual({ id: verificationId, status: 'processing' });
         expect(mockIDmetaProvider.initialize).toHaveBeenCalled();
         expect(mockIDmetaProvider.biometricVerification).toHaveBeenCalledWith({
           image: dto.image,
@@ -873,7 +931,10 @@ describe('VerificationsService', () => {
           templateId: dto.templateId,
           verificationId: externalVerificationId,
         });
-        expect(mockVerificationRepository.update).toHaveBeenCalled();
+        expect(mockVerificationRepository.update).toHaveBeenCalledWith(
+          verificationId,
+          expect.objectContaining({ status: 'processing' })
+        );
         expect(mockEventPublisher.publishProgress).toHaveBeenCalledWith(verificationId, 'biometric_verification', 25);
         expect(mockEventPublisher.publishCompleted).toHaveBeenCalled();
       });
@@ -896,7 +957,7 @@ describe('VerificationsService', () => {
         };
 
         const mockResult = {
-          status: 'approved',
+          status: 'processing',
           providerData: {
             fullResponse: { status: true, message: 'OK' },
             result: {
@@ -907,11 +968,19 @@ describe('VerificationsService', () => {
           },
         };
 
+        mockFileStorageService.saveBase64Image.mockResolvedValue({
+          url: '/uploads/verifications/test/image.jpg',
+          path: '/path/to/image.jpg',
+          mimeType: 'image/jpeg',
+          size: 1024,
+        });
+
         (mockIDmetaProvider.biometricVerification as jest.Mock).mockResolvedValue(mockResult);
 
         const result = await service.biometricVerification(tenantId, dtoWithImageOnly);
 
-        expect(result.status).toBe('approved');
+        // Biometrics operations are async - return 'processing' and wait for webhook
+        expect(result.status).toBe('processing');
         expect(mockIDmetaProvider.biometricVerification).toHaveBeenCalledWith({
           image: dtoWithImageOnly.image,
           imageBase64: undefined,
@@ -932,6 +1001,13 @@ describe('VerificationsService', () => {
             },
           },
         };
+
+        mockFileStorageService.saveBase64Image.mockResolvedValue({
+          url: '/uploads/verifications/test/image.jpg',
+          path: '/path/to/image.jpg',
+          mimeType: 'image/jpeg',
+          size: 1024,
+        });
 
         (mockIDmetaProvider.biometricVerification as jest.Mock).mockResolvedValue(mockResult);
 
@@ -1087,28 +1163,9 @@ describe('VerificationsService', () => {
         expect(uninitializedProvider.initialize).toHaveBeenCalled();
       });
 
-      it('should update account status when verification is linked to account', async () => {
-        const dto: PhLtoDriversLicenseDto = {
-          verificationId,
-          templateId: '425',
-          licenseNo: 'N01-12-345678',
-        };
-
-        const mockResult = {
-          status: 'approved',
-          providerData: {
-            fullResponse: {},
-            parsedResult: { data: {} },
-          },
-        };
-
-        (mockIDmetaProvider.verifyPhLtoDriversLicense as jest.Mock).mockResolvedValue(mockResult);
-
-        await service.verifyPhLtoDriversLicense(tenantId, dto);
-
-        expect(mockAccountRepository.findOne).toHaveBeenCalled();
-        expect(mockAccountRepository.save).toHaveBeenCalled();
-      });
+      // Note: Account updates are no longer done in individual verification methods
+      // Accounts are only saved after finalize-verification if status is 'verified'
+      // This test is removed as it's no longer applicable
 
       it('should not update account if verification has no linked account', async () => {
         const verificationWithoutAccount = {
@@ -1159,6 +1216,243 @@ describe('VerificationsService', () => {
 
         // Should not throw, just log warning
         const result = await service.verifyPhLtoDriversLicense(tenantId, dto);
+
+        expect(result).toBeDefined();
+        expect(result.status).toBe('approved');
+      });
+    });
+
+    describe('finalizeVerification', () => {
+      const dto: FinalizeVerificationDto = {
+        verificationId,
+        templateId: '425',
+      };
+
+      it('should successfully finalize verification', async () => {
+        const mockResult = {
+          status: 'approved',
+          providerData: {
+            fullResponse: {},
+            verification: { id: externalVerificationId, status: 3 },
+            missing_plans: [],
+            status_message: 'VERIFIED',
+            finalized: true,
+          },
+        };
+
+        (mockIDmetaProvider.finalizeVerification as jest.Mock).mockResolvedValue(mockResult);
+
+        const result = await service.finalizeVerification(tenantId, dto);
+
+        expect(result).toEqual({
+          id: verificationId,
+          status: 'approved',
+          finalized: true,
+          statusMessage: 'VERIFIED',
+          missingPlans: [],
+        });
+        expect(mockIDmetaProvider.initialize).toHaveBeenCalled();
+        expect(mockIDmetaProvider.finalizeVerification).toHaveBeenCalledWith({
+          templateId: dto.templateId,
+          verificationId: externalVerificationId,
+        });
+        expect(mockVerificationRepository.update).toHaveBeenCalled();
+        expect(mockEventPublisher.publishProgress).toHaveBeenCalledWith(verificationId, 'finalize_verification', 50);
+        expect(mockEventPublisher.publishCompleted).toHaveBeenCalled();
+      });
+
+      it('should throw error if provider is not IDmeta', async () => {
+        const mockOtherProvider = {
+          isInitialized: true,
+          initialize: jest.fn(),
+        };
+        mockProvidersFactory.getProviderById.mockResolvedValue(mockOtherProvider);
+
+        await expect(service.finalizeVerification(tenantId, dto)).rejects.toThrow(
+          BadRequestException
+        );
+        expect(mockIDmetaProvider.finalizeVerification).not.toHaveBeenCalled();
+      });
+
+      it('should throw error if verification not initialized with IDmeta', async () => {
+        const verificationWithoutExternalId = {
+          ...mockVerification,
+          external_verification_id: null,
+        };
+        mockVerificationRepository.findOne.mockResolvedValue(verificationWithoutExternalId);
+
+        await expect(service.finalizeVerification(tenantId, dto)).rejects.toThrow(
+          BadRequestException
+        );
+        expect(mockIDmetaProvider.finalizeVerification).not.toHaveBeenCalled();
+      });
+
+      it('should handle REVIEW_NEEDED status', async () => {
+        const mockResult = {
+          status: 'processing',
+          providerData: {
+            fullResponse: {},
+            verification: { id: externalVerificationId, status: 2 },
+            missing_plans: [],
+            status_message: 'REVIEW_NEEDED',
+            finalized: true,
+          },
+        };
+
+        (mockIDmetaProvider.finalizeVerification as jest.Mock).mockResolvedValue(mockResult);
+
+        const result = await service.finalizeVerification(tenantId, dto);
+
+        expect(result.status).toBe('processing');
+        expect(result.statusMessage).toBe('REVIEW_NEEDED');
+      });
+
+      it('should save account when verification status is verified', async () => {
+        const mockResult = {
+          status: 'verified',
+          providerData: {
+            fullResponse: {},
+            verification: { id: externalVerificationId, status: 3 },
+            missing_plans: [],
+            status_message: 'VERIFIED',
+            finalized: true,
+          },
+        };
+
+        // Mock the verification to have 'verified' status after update
+        const updatedVerification = {
+          ...mockVerification,
+          status: 'verified',
+          validated_user_data: { firstName: 'John', lastName: 'Doe' },
+          provider_response: { verification: { id: externalVerificationId } },
+          user_metadata: {},
+        };
+
+        (mockIDmetaProvider.finalizeVerification as jest.Mock).mockResolvedValue(mockResult);
+        mockVerificationRepository.update.mockResolvedValue({ affected: 1 });
+        
+        // Mock findOne calls:
+        // 1. First call from getVerification (with relations)
+        // 2. Second call from finalizeVerification after update (without relations, returns updated verification)
+        mockVerificationRepository.findOne
+          .mockResolvedValueOnce(mockVerification) // First call: getVerification
+          .mockResolvedValueOnce(updatedVerification); // Second call: after update, before saveAccountFromVerification
+        
+        mockAccountRepository.findOne.mockResolvedValue(null);
+        mockAccountRepository.create.mockReturnValue({ id: 'account-123', tenant_id: tenantId } as any);
+        mockAccountRepository.save.mockResolvedValue({ id: 'account-123', tenant_id: tenantId } as any);
+
+        await service.finalizeVerification(tenantId, dto);
+
+        // Account should be saved only if verification status is 'verified'
+        expect(mockAccountRepository.findOne).toHaveBeenCalled();
+        expect(mockAccountRepository.save).toHaveBeenCalled();
+      });
+    });
+
+    describe('manualFinalizeVerification', () => {
+      const dto: ManualFinalizeVerificationDto = {
+        verificationId,
+        templateId: '425',
+      };
+
+      it('should successfully manually finalize verification', async () => {
+        const mockResult = {
+          status: 'approved',
+          providerData: {
+            fullResponse: {},
+            verification: { id: externalVerificationId, status: 3 },
+            missing_plans: [],
+            status_message: 'VERIFIED',
+            finalized: true,
+          },
+        };
+
+        (mockIDmetaProvider.manualFinalizeVerification as jest.Mock).mockResolvedValue(mockResult);
+
+        const result = await service.manualFinalizeVerification(tenantId, dto);
+
+        expect(result).toEqual({
+          id: verificationId,
+          status: 'approved',
+          finalized: true,
+          statusMessage: 'VERIFIED',
+          missingPlans: [],
+        });
+        expect(mockIDmetaProvider.initialize).toHaveBeenCalled();
+        expect(mockIDmetaProvider.manualFinalizeVerification).toHaveBeenCalledWith({
+          templateId: dto.templateId,
+          verificationId: externalVerificationId,
+        });
+        expect(mockVerificationRepository.update).toHaveBeenCalled();
+        expect(mockEventPublisher.publishProgress).toHaveBeenCalledWith(verificationId, 'manual_finalize_verification', 50);
+        expect(mockEventPublisher.publishCompleted).toHaveBeenCalled();
+      });
+
+      it('should throw error if provider is not IDmeta', async () => {
+        const mockOtherProvider = {
+          isInitialized: true,
+          initialize: jest.fn(),
+        };
+        mockProvidersFactory.getProviderById.mockResolvedValue(mockOtherProvider);
+
+        await expect(service.manualFinalizeVerification(tenantId, dto)).rejects.toThrow(
+          BadRequestException
+        );
+        expect(mockIDmetaProvider.manualFinalizeVerification).not.toHaveBeenCalled();
+      });
+
+      it('should throw error if verification not initialized with IDmeta', async () => {
+        const verificationWithoutExternalId = {
+          ...mockVerification,
+          external_verification_id: null,
+        };
+        mockVerificationRepository.findOne.mockResolvedValue(verificationWithoutExternalId);
+
+        await expect(service.manualFinalizeVerification(tenantId, dto)).rejects.toThrow(
+          BadRequestException
+        );
+        expect(mockIDmetaProvider.manualFinalizeVerification).not.toHaveBeenCalled();
+      });
+
+      it('should handle rejected status', async () => {
+        const mockResult = {
+          status: 'rejected',
+          providerData: {
+            fullResponse: {},
+            verification: { id: externalVerificationId, status: 1 },
+            missing_plans: [],
+            status_message: 'REJECTED',
+            finalized: true,
+          },
+        };
+
+        (mockIDmetaProvider.manualFinalizeVerification as jest.Mock).mockResolvedValue(mockResult);
+
+        const result = await service.manualFinalizeVerification(tenantId, dto);
+
+        expect(result.status).toBe('rejected');
+        expect(result.statusMessage).toBe('REJECTED');
+      });
+
+      it('should handle WebSocket publish errors gracefully', async () => {
+        mockEventPublisher.publishCompleted.mockRejectedValue(new Error('WebSocket error'));
+
+        const mockResult = {
+          status: 'approved',
+          providerData: {
+            fullResponse: {},
+            verification: { id: externalVerificationId, status: 3 },
+            missing_plans: [],
+            status_message: 'VERIFIED',
+            finalized: true,
+          },
+        };
+
+        (mockIDmetaProvider.manualFinalizeVerification as jest.Mock).mockResolvedValue(mockResult);
+
+        // Should not throw, just log warning
+        const result = await service.manualFinalizeVerification(tenantId, dto);
 
         expect(result).toBeDefined();
         expect(result.status).toBe('approved');

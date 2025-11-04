@@ -197,6 +197,34 @@ export interface IDmetaBiometricVerificationResponse {
   apiRequest?: any;
 }
 
+export interface IDmetaFinalizeVerificationRequest {
+  template_id: string;
+  verification_id: string;
+}
+
+export interface IDmetaFinalizeVerificationResponse {
+  message: string;
+  verification?: any;
+  missing_plans?: any[];
+  status?: number;
+  status_message?: string;
+  finalized?: boolean;
+}
+
+export interface IDmetaManualFinalizeVerificationRequest {
+  template_id: string;
+  verification_id: string;
+}
+
+export interface IDmetaManualFinalizeVerificationResponse {
+  message: string;
+  verification?: any;
+  missing_plans?: any[];
+  status?: number;
+  status_message?: string;
+  finalized?: boolean;
+}
+
 @Injectable()
 export class IDmetaHttpClient {
   private readonly logger = new Logger(IDmetaHttpClient.name);
@@ -228,21 +256,21 @@ export class IDmetaHttpClient {
       callback_url: request.callback_url,
       metadata: request.metadata,
     });
-
+    
     try {
       const response = await axios.post(
         endpoint,
         {
-          template_id: request.template_id,
-          callback_url: request.callback_url,
-          metadata: request.metadata,
+        template_id: request.template_id,
+        callback_url: request.callback_url,
+        metadata: request.metadata,
         },
         {
-          headers: {
+        headers: {
             Authorization: `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          timeout: this.timeout,
+          'Content-Type': 'application/json',
+        },
+        timeout: this.timeout,
         }
       );
 
@@ -250,8 +278,8 @@ export class IDmetaHttpClient {
       const workflowId = response.data.template?.workflow_id || response.data.workflow_id;
       this.logger.log(`[IDmeta] Extracted verification ID: ${verificationId}`);
       this.logger.log(`[IDmeta] Extracted workflow ID: ${workflowId}`);
-
-      const workflowUrl = workflowId
+      
+      const workflowUrl = workflowId 
         ? `${this.baseUrl}/${this.apiVersion}/workflows/${workflowId}`
         : response.data.workflow_url;
 
@@ -277,7 +305,7 @@ export class IDmetaHttpClient {
     const axios = require('axios');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verifications/${verificationId}`;
     this.logger.log(`[IDmeta] Getting verification status at endpoint: ${endpoint}`);
-
+    
     try {
       const response = await axios.get(endpoint, {
         headers: {
@@ -301,7 +329,7 @@ export class IDmetaHttpClient {
     const axios = require('axios');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verifications/${verificationId}`;
     this.logger.log(`[IDmeta] Cancelling verification at endpoint: ${endpoint}`);
-
+    
     try {
       await axios.delete(endpoint, {
         headers: {
@@ -360,26 +388,183 @@ export class IDmetaHttpClient {
     }
   }
 
+  /**
+   * Validate that a buffer contains valid image data by checking magic bytes
+   */
+  private validateImageBuffer(buffer: Buffer): boolean {
+    if (!buffer || buffer.length < 4) return false;
+    
+    // Check for common image format magic bytes
+    // JPEG: FF D8 FF
+    // PNG: 89 50 4E 47
+    // GIF: 47 49 46 38 (GIF8)
+    // WEBP: Check for RIFF header at start
+    const header = buffer.slice(0, 12);
+    
+    // JPEG
+    if (header[0] === 0xFF && header[1] === 0xD8 && header[2] === 0xFF) return true;
+    // PNG
+    if (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47) return true;
+    // GIF
+    if (header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x38) return true;
+    // WEBP (RIFF...WEBP)
+    if (header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46 &&
+        header[8] === 0x57 && header[9] === 0x45 && header[10] === 0x42 && header[11] === 0x50) return true;
+    
+    return false;
+  }
+
   async documentVerification(request: IDmetaDocumentVerificationRequest): Promise<IDmetaDocumentVerificationResponse> {
     const axios = require('axios');
+    const FormData = require('form-data');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/document_verification`;
     this.logger.log(`[IDmeta] Document verification at endpoint: ${endpoint}`);
 
     try {
-      const payload: any = {
-        imageFrontSide: request.imageFrontSide,
-        template_id: request.template_id,
-        verification_id: request.verification_id,
+      // Create FormData instance
+      const formData = new FormData();
+
+      // Extract base64 string and MIME type from data URI if needed
+      const extractBase64 = (dataUri: string): { base64: string; mimeType: string } => {
+        if (dataUri.startsWith('data:')) {
+          const matches = dataUri.match(/^data:([^;]+);base64,(.+)$/);
+          if (matches) {
+            return {
+              base64: matches[2],
+              mimeType: matches[1] || 'image/jpeg',
+            };
+          }
+        }
+        // If not a data URI, assume it's plain base64 (default to JPEG)
+        return {
+          base64: dataUri,
+          mimeType: 'image/jpeg',
+        };
       };
 
-      if (request.imageBackSide) payload.imageBackSide = request.imageBackSide;
+      // Get file extension from MIME type
+      const getExtension = (mimeType: string): string => {
+        const mimeMap: Record<string, string> = {
+          'image/jpeg': '.jpg',
+          'image/jpg': '.jpg',
+          'image/png': '.png',
+          'image/gif': '.gif',
+          'image/webp': '.webp',
+        };
+        return mimeMap[mimeType] || '.jpg';
+      };
 
-      const response = await axios.post(endpoint, payload, {
+      // Validate and convert base64 to Buffer for front side
+      const frontData = extractBase64(request.imageFrontSide);
+      const frontBase64Clean = frontData.base64.replace(/\s/g, '');
+      
+      if (!frontBase64Clean || frontBase64Clean.length === 0) {
+        throw new Error('Front image base64 string is empty');
+      }
+      
+      // Base64 strings should be at least ~100 chars for even tiny images (100 bytes)
+      // A typical ID card image in base64 is thousands of characters
+      if (frontBase64Clean.length < 100) {
+        this.logger.error(`Front image base64 string is suspiciously short: ${frontBase64Clean.length} characters. Expected at least 1000+ for a valid image.`);
+        throw new Error(`Front image base64 string is too short (${frontBase64Clean.length} chars). Image may be incomplete or invalid.`);
+      }
+      
+      let frontBuffer: Buffer;
+      try {
+        frontBuffer = Buffer.from(frontBase64Clean, 'base64');
+      } catch (error) {
+        throw new Error(`Failed to decode front image base64: ${error.message}`);
+      }
+      
+      if (!frontBuffer || frontBuffer.length === 0) {
+        throw new Error('Front image buffer is empty after decoding');
+      }
+      
+      // Minimum image size check (even tiny 1x1 pixel images are ~100 bytes)
+      // Typical ID card images are 50KB - 500KB+
+      const MIN_IMAGE_SIZE = 100; // bytes
+      if (frontBuffer.length < MIN_IMAGE_SIZE) {
+        this.logger.error(`Front image buffer is too small: ${frontBuffer.length} bytes. Minimum expected: ${MIN_IMAGE_SIZE} bytes. First 16 bytes: ${frontBuffer.slice(0, 16).toString('hex')}`);
+        throw new Error(`Front image is too small (${frontBuffer.length} bytes). This is likely not a valid image file.`);
+      }
+      
+      // Validate it's actually an image by checking magic bytes
+      const isValidImage = this.validateImageBuffer(frontBuffer);
+      if (!isValidImage) {
+        this.logger.error(`Front image buffer failed magic byte validation (${frontBuffer.length} bytes). First 16 bytes: ${frontBuffer.slice(0, 16).toString('hex')}. Expected JPEG (FFD8FF), PNG (89504E47), GIF (47494638), or WEBP (52494646...57454250)`);
+        throw new Error(`Front image is not a valid image format. Buffer size: ${frontBuffer.length} bytes. Expected valid JPEG, PNG, GIF, or WEBP image.`);
+      } else {
+        this.logger.debug(`Front image validated successfully (${frontBuffer.length} bytes)`);
+      }
+      
+      const frontExtension = getExtension(frontData.mimeType);
+      const frontFilename = `image_front${frontExtension}`;
+      
+      // Append as file field (matching curl --form 'imageFrontSide=@file')
+      // Use proper filename with extension for IDmeta to recognize it as an image
+      formData.append('imageFrontSide', frontBuffer, {
+        filename: frontFilename,
+        contentType: frontData.mimeType,
+        knownLength: frontBuffer.length,
+      });
+
+      // Add back side if provided (as file field)
+      if (request.imageBackSide) {
+        const backData = extractBase64(request.imageBackSide);
+        const backBase64Clean = backData.base64.replace(/\s/g, '');
+        
+        if (!backBase64Clean || backBase64Clean.length === 0) {
+          throw new Error('Back image base64 string is empty');
+        }
+        
+        let backBuffer: Buffer;
+        try {
+          backBuffer = Buffer.from(backBase64Clean, 'base64');
+        } catch (error) {
+          throw new Error(`Failed to decode back image base64: ${error.message}`);
+        }
+        
+        if (!backBuffer || backBuffer.length === 0) {
+          throw new Error('Back image buffer is empty after decoding');
+        }
+        
+        // Validate it's actually an image
+        const isValidBackImage = this.validateImageBuffer(backBuffer);
+        if (!isValidBackImage) {
+          this.logger.warn(`Back image buffer failed magic byte validation (${backBuffer.length} bytes), but proceeding`);
+        } else {
+          this.logger.debug(`Back image validated successfully (${backBuffer.length} bytes)`);
+        }
+        
+        const backExtension = getExtension(backData.mimeType);
+        const backFilename = `image_back${backExtension}`;
+        
+        formData.append('imageBackSide', backBuffer, {
+          filename: backFilename,
+          contentType: backData.mimeType,
+          knownLength: backBuffer.length,
+        });
+      }
+
+      // Add text fields (matching curl --form 'template_id="426"')
+      // Note: FormData.append with string value creates a text field, not a file
+      formData.append('template_id', String(request.template_id));
+      formData.append('verification_id', String(request.verification_id));
+
+      // Get form data headers (includes Content-Type with boundary)
+      const formHeaders = formData.getHeaders();
+
+      this.logger.debug(`[IDmeta] FormData fields: imageFrontSide (${frontBuffer.length} bytes), ${request.imageBackSide ? 'imageBackSide, ' : ''}template_id=${request.template_id}, verification_id=${request.verification_id}`);
+
+      const response = await axios.post(endpoint, formData, {
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...formHeaders, // This sets Content-Type: multipart/form-data with boundary
         },
         timeout: this.timeout,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
       });
 
       return response.data;
@@ -659,6 +844,62 @@ export class IDmetaHttpClient {
     } catch (error) {
       this.logger.error('Failed to perform IDmeta Biometric Verification', error.response?.data || error.message);
       throw new Error(`IDmeta Biometric Verification failed: ${error.response?.data?.message || error.message}`);
+    }
+  }
+
+  async finalizeVerification(request: IDmetaFinalizeVerificationRequest): Promise<IDmetaFinalizeVerificationResponse> {
+    const axios = require('axios');
+    const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/finalize-verification`;
+    this.logger.log(`[IDmeta] Finalize verification at endpoint: ${endpoint}`);
+
+    try {
+      const payload = {
+        template_id: request.template_id,
+        verification_id: request.verification_id,
+      };
+
+      const response = await axios.post(endpoint, payload, {
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: this.timeout,
+      });
+
+      return response.data;
+    } catch (error) {
+      this.logger.error('Failed to finalize IDmeta verification', error.response?.data || error.message);
+      throw new Error(`IDmeta Finalize Verification failed: ${error.response?.data?.message || error.message}`);
+    }
+  }
+
+  async manualFinalizeVerification(request: IDmetaManualFinalizeVerificationRequest): Promise<IDmetaManualFinalizeVerificationResponse> {
+    const axios = require('axios');
+    const FormData = require('form-data');
+    const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/manual-finalize-verification`;
+    this.logger.log(`[IDmeta] Manual finalize verification at endpoint: ${endpoint}`);
+
+    try {
+      // Manual finalize uses form-data according to Postman collection
+      const formData = new FormData();
+      formData.append('template_id', String(request.template_id));
+      formData.append('verification_id', String(request.verification_id));
+
+      const formHeaders = formData.getHeaders();
+
+      const response = await axios.post(endpoint, formData, {
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          Accept: 'application/json',
+          ...formHeaders,
+        },
+        timeout: this.timeout,
+      });
+
+      return response.data;
+    } catch (error) {
+      this.logger.error('Failed to manually finalize IDmeta verification', error.response?.data || error.message);
+      throw new Error(`IDmeta Manual Finalize Verification failed: ${error.response?.data?.message || error.message}`);
     }
   }
 }
