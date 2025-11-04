@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like } from 'typeorm';
+import { Repository, Like, In } from 'typeorm';
 import { Account } from '../database/entities/account.entity';
 import { Verification } from '../database/entities/verification.entity';
 import { VerificationDocument } from '../database/entities/verification-document.entity';
@@ -283,13 +283,16 @@ export class AccountsService {
     const [
       totalVerifications,
       pendingVerifications,
-      approvedVerifications,
+      verifiedVerifications,
       rejectedVerifications,
       totalDocuments,
     ] = await Promise.all([
       this.verificationRepository.count({ where: { account_id: accountId } }),
       this.verificationRepository.count({ where: { account_id: accountId, status: 'pending' } }),
-      this.verificationRepository.count({ where: { account_id: accountId, status: 'approved' } }),
+      // Count both 'verified' and 'approved' for backward compatibility during migration
+      this.verificationRepository.count({ 
+        where: { account_id: accountId, status: In(['verified', 'approved']) }
+      }),
       this.verificationRepository.count({ where: { account_id: accountId, status: 'rejected' } }),
       this.documentRepository.count({ where: { account_id: accountId } }),
     ]);
@@ -308,7 +311,7 @@ export class AccountsService {
         verifications: {
           total: totalVerifications,
           pending: pendingVerifications,
-          approved: approvedVerifications,
+          verified: verifiedVerifications,
           rejected: rejectedVerifications,
         },
         documents: {

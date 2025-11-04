@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { User } from '../database/entities/user.entity';
@@ -36,14 +36,17 @@ export class AdminService {
       totalProviders,
       totalVerifications,
       pendingVerifications,
-      approvedVerifications,
+      verifiedVerifications,
       rejectedVerifications,
     ] = await Promise.all([
       this.tenantRepository.count(),
       this.providerRepository.count({ where: { is_active: true } }),
       this.verificationRepository.count(),
       this.verificationRepository.count({ where: { status: 'pending' } }),
-      this.verificationRepository.count({ where: { status: 'approved' } }),
+      // Count both 'verified' and 'approved' for backward compatibility during migration
+      this.verificationRepository.count({ 
+        where: { status: In(['verified', 'approved']) }
+      }),
       this.verificationRepository.count({ where: { status: 'rejected' } }),
     ]);
 
@@ -60,7 +63,7 @@ export class AdminService {
       verifications: {
         total: totalVerifications,
         pending: pendingVerifications,
-        approved: approvedVerifications,
+        verified: verifiedVerifications,
         rejected: rejectedVerifications,
       },
     };

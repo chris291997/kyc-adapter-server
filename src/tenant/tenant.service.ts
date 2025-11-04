@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Tenant } from '../database/entities/tenant.entity';
 import { Verification } from '../database/entities/verification.entity';
 import { ApiKey } from '../database/entities/api-key.entity';
@@ -25,14 +25,17 @@ export class TenantService {
     const [
       totalVerifications,
       pendingVerifications,
-      approvedVerifications,
+      verifiedVerifications,
       rejectedVerifications,
       quotaUsed,
       quotaLimit,
     ] = await Promise.all([
       this.verificationRepository.count({ where: { tenant_id: tenantId } }),
       this.verificationRepository.count({ where: { tenant_id: tenantId, status: 'pending' } }),
-      this.verificationRepository.count({ where: { tenant_id: tenantId, status: 'approved' } }),
+      // Count both 'verified' and 'approved' for backward compatibility during migration
+      this.verificationRepository.count({ 
+        where: { tenant_id: tenantId, status: In(['verified', 'approved']) }
+      }),
       this.verificationRepository.count({ where: { tenant_id: tenantId, status: 'rejected' } }),
       this.verificationRepository.count({ where: { tenant_id: tenantId } }),
       this.tenantRepository.findOne({ where: { id: tenantId }, select: ['quota_limit'] }),
@@ -42,7 +45,7 @@ export class TenantService {
       verifications: {
         total: totalVerifications,
         pending: pendingVerifications,
-        approved: approvedVerifications,
+        verified: verifiedVerifications,
         rejected: rejectedVerifications,
         needsReview: await this.verificationRepository.count({ 
           where: { tenant_id: tenantId, status: 'needs_review' } 
