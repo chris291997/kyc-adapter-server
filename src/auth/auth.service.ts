@@ -217,10 +217,22 @@ export class AuthService {
   }
 
   async getApiKeys(userId: string) {
-    return this.apiKeyRepository.find({
+    const apiKeys = await this.apiKeyRepository.find({
       where: { user_id: userId },
       order: { created_at: 'DESC' },
     });
+
+    // Sanitize response - do not expose key_hash
+    return apiKeys.map(apiKey => ({
+      id: apiKey.id,
+      key_prefix: apiKey.key_prefix,
+      name: apiKey.name,
+      scopes: apiKey.scopes,
+      is_active: apiKey.is_active,
+      last_used_at: apiKey.last_used_at,
+      expires_at: apiKey.expires_at,
+      created_at: apiKey.created_at,
+    }));
   }
 
   async revokeApiKey(userId: string, apiKeyId: string) {
