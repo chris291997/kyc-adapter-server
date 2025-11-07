@@ -10,7 +10,7 @@ export class EventPublisher {
   async publish(event: any) {
     // Validate that verificationId is present
     if (!event.verificationId || typeof event.verificationId !== 'string' || event.verificationId.trim() === '') {
-      this.logger.error(`⚠️  Cannot publish event: Missing or invalid verificationId`, event);
+      this.logger.error('Cannot publish event: missing or invalid verificationId', event);
       throw new Error('Event must include a valid verificationId');
     }
     
@@ -19,7 +19,6 @@ export class EventPublisher {
       JSON.stringify(event)
     );
     
-    this.logger.debug(`📤 Published event "${event.event}" for verification ${event.verificationId}`);
   }
   
   async publishProgress(verificationId: string, step: string, progress: number) {

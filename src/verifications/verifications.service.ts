@@ -109,25 +109,7 @@ export class VerificationsService {
       };
 
       // 5. Call provider
-      const apiVersion = providerEntity.api_version || 'v1';
-      const endpoint = `${providerEntity.base_url}/${apiVersion}/verification/create-verification`;
-      this.logger.log(`Calling provider '${providerEntity.name}' (${providerEntity.type}) for verification`, {
-        providerId: providerEntity.id,
-        providerName: providerEntity.name,
-        baseUrl: providerEntity.base_url,
-        apiVersion,
-        endpoint,
-        verificationId: verification.id,
-        templateId: createVerificationDto.templateId,
-      });
-      
       const result = await providerInstance.createVerification(request);
-      
-      this.logger.log(`Provider '${providerEntity.name}' responded successfully`, {
-        providerVerificationId: result.providerVerificationId,
-        status: result.status,
-        sessionUrl: result.sessionUrl,
-      });
 
       // Extract verification types from plans if available
       let verificationTypes: string[] = null;
@@ -138,8 +120,6 @@ export class VerificationsService {
           .map((plan: any) => plan.plan)
           .filter((plan: string) => plan && typeof plan === 'string');
         
-        this.logger.log(`Extracted verification types from plans: ${verificationTypes.join(', ')}`);
-        
         // Update main verification_type to first extracted type or 'multi' if multiple types
         if (verificationTypes.length > 0) {
           mainVerificationType = verificationTypes.length === 1 ? verificationTypes[0] : 'multi';
@@ -147,8 +127,6 @@ export class VerificationsService {
       }
 
       // 6. Update verification with provider response
-      this.logger.log(`Updating verification with external_verification_id: ${result.providerVerificationId}`);
-      
       await this.verificationRepository.update(verification.id, {
         external_verification_id: result.providerVerificationId,
         external_workflow_url: result.sessionUrl,
@@ -1352,13 +1330,11 @@ export class VerificationsService {
       });
 
       if (account) {
-        this.logger.log(`Found existing account by email: ${data.email}`);
         return account;
       }
     }
 
     // Create new account
-    this.logger.log(`Creating new account for tenant: ${tenantId}`);
     const account = this.accountRepository.create({
       tenant_id: tenantId,
       email: data.email,
@@ -1516,7 +1492,6 @@ export class VerificationsService {
     try {
       // Only save account if verification status is 'verified'
       if (verification.status !== 'verified') {
-        this.logger.log(`Verification ${verification.id} status is ${verification.status}, skipping account save (only saves on 'verified')`);
         return;
       }
 
@@ -1542,9 +1517,7 @@ export class VerificationsService {
           metadata: userMetadata,
           verification_status: 'verified',
         });
-        this.logger.log(`Creating new account for verified verification ${verification.id}`);
       } else {
-        this.logger.log(`Updating existing linked account ${account.id} from verified verification ${verification.id}`);
       }
 
       // Extract identity data from multiple possible structures
@@ -1660,8 +1633,6 @@ export class VerificationsService {
           account_id: account.id,
         });
       }
-
-      this.logger.log(`Successfully saved account ${account.id} from verified verification ${verification.id}`);
     } catch (error) {
       this.logger.error(`Failed to save account from verification ${verification.id}:`, error);
       throw error;
@@ -1719,6 +1690,5 @@ export class VerificationsService {
     }
 
     await this.accountRepository.save(account);
-    this.logger.log(`Updated account ${accountId} status to ${accountStatus}`);
   }
 }

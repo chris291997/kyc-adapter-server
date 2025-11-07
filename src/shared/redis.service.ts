@@ -1,10 +1,11 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private client: Redis;
+  private readonly logger = new Logger(RedisService.name);
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -12,7 +13,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     // Only try to connect to Redis if REDIS_HOST is explicitly set
     const redisHost = this.configService.get('REDIS_HOST');
     if (!redisHost) {
-      console.log('ℹ️ Redis not configured, running without Redis');
+      this.logger.log('Redis not configured, running without Redis');
       this.client = null;
       return;
     }
@@ -42,11 +43,6 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       
       this.client = new Redis(redisOptions);
 
-      // Set up logging event handlers (non-blocking)
-      this.client.on('ready', () => {
-        console.log('✅ Redis client ready and authenticated');
-      });
-
       // Connect and wait for ready state
       return new Promise<void>(async (resolve, reject) => {
         let resolved = false;
@@ -74,10 +70,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
           if (resolved) return;
           cleanup();
           const errorMsg = err.message || err.toString();
-          console.error(`❌ Redis connection error: ${errorMsg}`);
+          this.logger.error(`Redis connection error: ${errorMsg}`);
           
           if (errorMsg.includes('NOAUTH') || errorMsg.includes('authentication') || errorMsg.includes('WRONGPASS')) {
-            console.error(`   Authentication failed - check if REDIS_PASSWORD matches Redis server password`);
+            this.logger.error('Authentication failed - check if REDIS_PASSWORD matches Redis server password');
           }
           
           reject(err);
@@ -98,11 +94,12 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
           cleanup();
           try {
             await this.client.ping();
+            this.logger.log('Redis client connected and ready');
             
             // Set up runtime error handler after successful connection
             this.client.on('error', (err) => {
               if (!err.message.includes('ECONNRESET') && !err.message.includes('ECONNABORTED') && !err.message.includes('Connection is closed')) {
-                console.warn(`⚠️ Redis runtime error: ${err.message}`);
+            this.logger.warn(`Redis runtime error: ${err.message}`);
               }
             });
             
@@ -117,13 +114,13 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         } catch (error) {
           if (!resolved) {
             cleanup();
-            console.error(`❌ Redis connection error: ${error.message}`);
+            this.logger.error(`Redis connection error: ${error.message}`);
             reject(error);
           }
         }
       });
     } catch (error) {
-      console.warn(`⚠️ Redis connection failed (continuing without Redis): ${error.message}`);
+      this.logger.warn(`Redis connection failed (continuing without Redis): ${error.message}`);
       this.client = null;
     }
   }
@@ -160,14 +157,13 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   async subscribe(channel: string, callback: (message: string) => void): Promise<void> {
     if (!this.client) {
-      console.log(`⚠️  Cannot subscribe to ${channel}: Redis client not available`);
+      this.logger.warn(`Cannot subscribe to ${channel}: Redis client not available`);
       return;
     }
     
     try {
       // Subscribe to the channel
       await this.client.subscribe(channel);
-      console.log(`✅ Subscribed to Redis channel: ${channel}`);
       
       // Listen for messages
       this.client.on('message', (receivedChannel: string, message: string) => {
@@ -176,7 +172,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         }
       });
     } catch (error) {
-      console.error(`⚠️  Failed to subscribe to Redis channel ${channel}:`, error);
+      this.logger.error(`Failed to subscribe to Redis channel ${channel}: ${error.message}`, error);
     }
   }
 

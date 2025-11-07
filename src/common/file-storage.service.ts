@@ -29,12 +29,7 @@ export class FileStorageService {
         throw new Error('Invalid input: base64DataUrl must be a non-empty string');
       }
 
-      // Log input for debugging (first 100 chars to avoid huge logs)
-      const inputPreview = base64DataUrl.length > 100 
-        ? `${base64DataUrl.substring(0, 100)}...` 
-        : base64DataUrl;
-      this.logger.debug(`Saving image. Input length: ${base64DataUrl.length}, preview: ${inputPreview.substring(0, 100)}`);
-
+      // Prepare base64 payload for parsing
       let mimeType: string;
       let base64Data: string;
 
@@ -48,10 +43,8 @@ export class FileStorageService {
         base64Data = dataUriMatch[2] || '';
         
         if (base64Data.length < 100) {
-          this.logger.warn(`⚠️  WARNING: Extracted base64 string is very short (${base64Data.length} chars). Expected 1000+ for a typical image. This may be incomplete or corrupted data.`);
+          this.logger.warn(`Extracted base64 string is very short (${base64Data.length} chars). Expected 1000+ for a typical image. This may be incomplete or corrupted data.`);
         }
-        
-        this.logger.debug(`Parsed data URI with MIME type: ${mimeType}, base64 length: ${base64Data.length}`);
       } else {
         // Assume it's plain base64 string (without data URI prefix)
         // Default to JPEG if we can't determine the type
@@ -59,10 +52,8 @@ export class FileStorageService {
         base64Data = base64DataUrl.trim();
         
         if (base64Data.length < 100) {
-          this.logger.warn(`⚠️  WARNING: Plain base64 string is very short (${base64Data.length} chars). Expected 1000+ for a typical image. This may be incomplete or corrupted data.`);
+          this.logger.warn(`Plain base64 string is very short (${base64Data.length} chars). Expected 1000+ for a typical image. This may be incomplete or corrupted data.`);
         }
-        
-        this.logger.debug(`Parsed as plain base64 string, length: ${base64Data.length}`);
       }
 
       // Strip whitespace and newlines

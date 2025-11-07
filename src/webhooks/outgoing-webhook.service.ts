@@ -23,7 +23,6 @@ export class OutgoingWebhookService {
   ) {
     // Use callback URL from verification (provided by client during initiation)
     if (!verification.callback_url) {
-      this.logger.debug('No callback URL provided for this verification');
       return;
     }
     
@@ -52,8 +51,6 @@ export class OutgoingWebhookService {
         timeout: 30000 // 30 second timeout
       });
       
-      this.logger.log(`Webhook delivered successfully to ${verification.callback_url}`);
-      
       return { success: true };
       
     } catch (error) {
@@ -80,7 +77,7 @@ export class OutgoingWebhookService {
     const delay = Math.pow(5, attempt) * 1000; // Exponential backoff
     
     // TODO: Implement queue system for retries
-    this.logger.log(`Scheduling webhook retry ${attempt} for ${verification.id} in ${delay}ms`);
+    // Queue integration can enqueue retries here when implemented
   }
 }
 

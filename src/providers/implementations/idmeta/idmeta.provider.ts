@@ -57,7 +57,6 @@ export class IDmetaProvider implements IKycProvider {
     await this.httpClient.initialize(credentials, config);
     
     this.isInitialized = true;
-    this.logger.log('IDmeta provider initialized');
   }
 
   async createVerification(request: VerificationRequest): Promise<VerificationResponse> {

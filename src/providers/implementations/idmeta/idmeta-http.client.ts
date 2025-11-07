@@ -250,13 +250,6 @@ export class IDmetaHttpClient {
   async createSession(request: IDmetaSessionRequest): Promise<IDmetaSessionResponse> {
     const axios = require('axios');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/create-verification`;
-    this.logger.log(`[IDmeta] Creating verification session at endpoint: ${endpoint}`);
-    this.logger.debug(`[IDmeta] Request payload:`, {
-      template_id: request.template_id,
-      callback_url: request.callback_url,
-      metadata: request.metadata,
-    });
-    
     try {
       const response = await axios.post(
         endpoint,
@@ -276,8 +269,6 @@ export class IDmetaHttpClient {
 
       const verificationId = response.data.verification?.id || response.data.verification_id;
       const workflowId = response.data.template?.workflow_id || response.data.workflow_id;
-      this.logger.log(`[IDmeta] Extracted verification ID: ${verificationId}`);
-      this.logger.log(`[IDmeta] Extracted workflow ID: ${workflowId}`);
       
       const workflowUrl = workflowId 
         ? `${this.baseUrl}/${this.apiVersion}/workflows/${workflowId}`
@@ -304,7 +295,6 @@ export class IDmetaHttpClient {
   async getVerificationStatus(verificationId: string): Promise<IDmetaStatusResponse> {
     const axios = require('axios');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verifications/${verificationId}`;
-    this.logger.log(`[IDmeta] Getting verification status at endpoint: ${endpoint}`);
     
     try {
       const response = await axios.get(endpoint, {
@@ -328,7 +318,6 @@ export class IDmetaHttpClient {
   async cancelVerification(verificationId: string): Promise<void> {
     const axios = require('axios');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verifications/${verificationId}`;
-    this.logger.log(`[IDmeta] Cancelling verification at endpoint: ${endpoint}`);
     
     try {
       await axios.delete(endpoint, {
@@ -361,7 +350,6 @@ export class IDmetaHttpClient {
   async verifyPhilsys(request: IDmetaPhilsysRequest): Promise<IDmetaPhilsysResponse> {
     const axios = require('axios');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/philippines/philsys`;
-    this.logger.log(`[IDmeta] Philsys verification at endpoint: ${endpoint}`);
 
     try {
       const payload: any = {
@@ -418,7 +406,6 @@ export class IDmetaHttpClient {
     const axios = require('axios');
     const FormData = require('form-data');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/document_verification`;
-    this.logger.log(`[IDmeta] Document verification at endpoint: ${endpoint}`);
 
     try {
       // Create FormData instance
@@ -462,7 +449,6 @@ export class IDmetaHttpClient {
         throw new Error('Front image base64 string is empty');
       }
       
-      // Base64 strings should be at least ~100 chars for even tiny images (100 bytes)
       // A typical ID card image in base64 is thousands of characters
       if (frontBase64Clean.length < 100) {
         this.logger.error(`Front image base64 string is suspiciously short: ${frontBase64Clean.length} characters. Expected at least 1000+ for a valid image.`);
@@ -494,7 +480,6 @@ export class IDmetaHttpClient {
         this.logger.error(`Front image buffer failed magic byte validation (${frontBuffer.length} bytes). First 16 bytes: ${frontBuffer.slice(0, 16).toString('hex')}. Expected JPEG (FFD8FF), PNG (89504E47), GIF (47494638), or WEBP (52494646...57454250)`);
         throw new Error(`Front image is not a valid image format. Buffer size: ${frontBuffer.length} bytes. Expected valid JPEG, PNG, GIF, or WEBP image.`);
       } else {
-        this.logger.debug(`Front image validated successfully (${frontBuffer.length} bytes)`);
       }
       
       const frontExtension = getExtension(frontData.mimeType);
@@ -533,7 +518,6 @@ export class IDmetaHttpClient {
         if (!isValidBackImage) {
           this.logger.warn(`Back image buffer failed magic byte validation (${backBuffer.length} bytes), but proceeding`);
         } else {
-          this.logger.debug(`Back image validated successfully (${backBuffer.length} bytes)`);
         }
         
         const backExtension = getExtension(backData.mimeType);
@@ -554,7 +538,6 @@ export class IDmetaHttpClient {
       // Get form data headers (includes Content-Type with boundary)
       const formHeaders = formData.getHeaders();
 
-      this.logger.debug(`[IDmeta] FormData fields: imageFrontSide (${frontBuffer.length} bytes), ${request.imageBackSide ? 'imageBackSide, ' : ''}template_id=${request.template_id}, verification_id=${request.verification_id}`);
 
       const response = await axios.post(endpoint, formData, {
         headers: {
@@ -577,7 +560,6 @@ export class IDmetaHttpClient {
   async verifyPhLtoDriversLicense(request: IDmetaPhLtoDriversLicenseRequest): Promise<IDmetaPhLtoDriversLicenseResponse> {
     const axios = require('axios');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/philippines/drivinglicense`;
-    this.logger.log(`[IDmeta] PH LTO Drivers License verification at endpoint: ${endpoint}`);
 
     try {
       const response = await axios.post(
@@ -606,7 +588,6 @@ export class IDmetaHttpClient {
   async verifyPhNationalPolice(request: IDmetaPhNationalPoliceRequest): Promise<IDmetaPhNationalPoliceResponse> {
     const axios = require('axios');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/philippines/nationalpolice`;
-    this.logger.log(`[IDmeta] PH National Police verification at endpoint: ${endpoint}`);
 
     try {
       const response = await axios.post(
@@ -636,7 +617,6 @@ export class IDmetaHttpClient {
   async verifyPhNbi(request: IDmetaPhNbiRequest): Promise<IDmetaPhNbiResponse> {
     const axios = require('axios');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/philippines/nbiclearance`;
-    this.logger.log(`[IDmeta] PH NBI verification at endpoint: ${endpoint}`);
 
     try {
       const response = await axios.post(
@@ -665,7 +645,6 @@ export class IDmetaHttpClient {
   async verifyPhPrc(request: IDmetaPhPrcRequest): Promise<IDmetaPhPrcResponse> {
     const axios = require('axios');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/philippines/prc`;
-    this.logger.log(`[IDmeta] PH PRC verification at endpoint: ${endpoint}`);
 
     try {
       const payload: any = {
@@ -701,7 +680,6 @@ export class IDmetaHttpClient {
   async verifyPhSss(request: IDmetaPhSssRequest): Promise<IDmetaPhSssResponse> {
     const axios = require('axios');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/philippines/socialsecurity`;
-    this.logger.log(`[IDmeta] PH SSS verification at endpoint: ${endpoint}`);
 
     try {
       const response = await axios.post(
@@ -730,7 +708,6 @@ export class IDmetaHttpClient {
   async biometricsFaceCompare(request: IDmetaBiometricsFaceMatchRequest): Promise<IDmetaBiometricsFaceMatchResponse> {
     const axios = require('axios');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/biometricsfacecompare`;
-    this.logger.log(`[IDmeta] Biometrics Face Compare at endpoint: ${endpoint}`);
 
     try {
       const payload = {
@@ -758,7 +735,6 @@ export class IDmetaHttpClient {
   async biometricsRegistration(request: IDmetaBiometricsRegistrationRequest): Promise<IDmetaBiometricsRegistrationResponse> {
     const axios = require('axios');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/biometricsregistration`;
-    this.logger.log(`[IDmeta] Biometrics Registration at endpoint: ${endpoint}`);
 
     try {
       const payload = {
@@ -786,7 +762,6 @@ export class IDmetaHttpClient {
   async customDocument(request: IDmetaCustomDocumentRequest): Promise<IDmetaCustomDocumentResponse> {
     const axios = require('axios');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/customdocument`;
-    this.logger.log(`[IDmeta] Custom Document verification at endpoint: ${endpoint}`);
 
     try {
       const payload: any = {
@@ -816,7 +791,6 @@ export class IDmetaHttpClient {
   async biometricVerification(request: IDmetaBiometricVerificationRequest): Promise<IDmetaBiometricVerificationResponse> {
     const axios = require('axios');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/biometricsverification`;
-    this.logger.log(`[IDmeta] Biometric Verification at endpoint: ${endpoint}`);
 
     try {
       const payload: any = {
@@ -850,7 +824,6 @@ export class IDmetaHttpClient {
   async finalizeVerification(request: IDmetaFinalizeVerificationRequest): Promise<IDmetaFinalizeVerificationResponse> {
     const axios = require('axios');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/finalize-verification`;
-    this.logger.log(`[IDmeta] Finalize verification at endpoint: ${endpoint}`);
 
     try {
       const payload = {
@@ -877,7 +850,6 @@ export class IDmetaHttpClient {
     const axios = require('axios');
     const FormData = require('form-data');
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/manual-finalize-verification`;
-    this.logger.log(`[IDmeta] Manual finalize verification at endpoint: ${endpoint}`);
 
     try {
       // Manual finalize uses form-data according to Postman collection
