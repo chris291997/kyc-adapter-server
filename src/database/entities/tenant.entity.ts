@@ -1,7 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
 import { TenantProviderConfig } from './tenant-provider-config.entity';
 import { Verification } from './verification.entity';
-import { AuditLog } from './audit-log.entity';
 import { Account } from './account.entity';
 import { User } from './user.entity';
 
@@ -36,9 +35,6 @@ export class Tenant {
 
   @OneToMany(() => Verification, verification => verification.tenant)
   verifications: Verification[];
-
-  @OneToMany(() => AuditLog, auditLog => auditLog.user)
-  audit_logs: AuditLog[];
 
   @OneToMany(() => Account, account => account.tenant)
   accounts: Account[];

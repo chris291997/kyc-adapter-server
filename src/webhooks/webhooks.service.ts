@@ -151,9 +151,9 @@ export class WebhooksService {
 
       // 11. Broadcast to WebSocket for real-time UI updates
       if (!verification.id) {
-        this.logger.error(`⚠️  Cannot publish WebSocket event: verification.id is undefined`, {
-          verification: verification,
-          webhookResult
+        this.logger.error('Cannot publish WebSocket event: verification.id is undefined', {
+          verification,
+          webhookResult,
         });
       } else {
         const websocketEvent = {
@@ -173,15 +173,10 @@ export class WebhooksService {
         try {
           // Publish to Redis (for Redis pub/sub)
           await this.eventPublisher.publish(websocketEvent);
-          this.logger.log(`📡 Published to Redis - Event: ${websocketEvent.event}, VerificationId: ${verification.id}`);
-          
           // Also broadcast directly to WebSocket (works without Redis)
           await this.websocketGateway.broadcast(verification.id, websocketEvent);
-          this.logger.log(`📡 Direct broadcast to WebSocket - Event: ${websocketEvent.event}, VerificationId: ${verification.id}`);
-          
-          this.logger.debug(`WebSocket Event Payload: ${JSON.stringify(websocketEvent, null, 2)}`);
         } catch (error) {
-          this.logger.error(`⚠️  Failed to publish WebSocket event: ${error.message}`, error);
+          this.logger.error(`Failed to publish WebSocket event: ${error.message}`, error);
         }
       }
 
@@ -265,7 +260,6 @@ export class WebhooksService {
 
       // Only update if account is not already verified
       if (account.verification_status === 'verified') {
-        this.logger.log(`Account ${accountId} is already verified, skipping status update. Only updating last_verification_id.`);
         // Still update last_verification_id to track the latest verification
         account.last_verification_id = verificationId;
         await this.accountRepository.save(account);
@@ -274,7 +268,6 @@ export class WebhooksService {
 
       // Only proceed if verification is approved/verified
       if (verificationStatus !== 'approved' && verificationStatus !== 'verified') {
-        this.logger.log(`Verification ${verificationId} status is ${verificationStatus}, not updating account (only updates on approved/verified)`);
         return;
       }
 
@@ -284,8 +277,6 @@ export class WebhooksService {
       // Update account status only if not already verified
       account.verification_status = accountStatus;
       account.last_verification_id = verificationId;
-      
-      this.logger.log(`Account ${accountId} status updated to ${accountStatus} with verification ${verificationId}`);
 
       // Extract verified data from multiple sources
       const verifiedData: Record<string, any> = {
@@ -376,7 +367,6 @@ export class WebhooksService {
       }
 
       await this.accountRepository.save(account);
-      this.logger.log(`Updated account ${accountId} status to ${accountStatus} from verification ${verificationId}`);
     } catch (error) {
       this.logger.error(`Failed to update account ${accountId} from verification`, error);
     }

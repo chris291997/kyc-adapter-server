@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, In } from 'typeorm';
 import { Account } from '../database/entities/account.entity';
@@ -9,8 +9,6 @@ import { UpdateAccountDto } from './dto/update-account.dto';
 
 @Injectable()
 export class AccountsService {
-  private readonly logger = new Logger(AccountsService.name);
-
   constructor(
     @InjectRepository(Account)
     private readonly accountRepository: Repository<Account>,
@@ -21,8 +19,6 @@ export class AccountsService {
   ) {}
 
   async create(tenantId: string, createAccountDto: CreateAccountDto) {
-    this.logger.log(`Creating account for tenant: ${tenantId}`);
-
     // Check for duplicate by email
     if (createAccountDto.email) {
       const existingByEmail = await this.accountRepository.findOne({
@@ -102,8 +98,6 @@ export class AccountsService {
   }
 
   async update(tenantId: string, id: string, updateAccountDto: UpdateAccountDto) {
-    this.logger.log(`Updating account: ${id}`);
-
     const account = await this.accountRepository.findOne({
       where: { id, tenant_id: tenantId },
     });
@@ -127,8 +121,6 @@ export class AccountsService {
   }
 
   async remove(tenantId: string, id: string) {
-    this.logger.log(`Deleting account: ${id}`);
-
     const account = await this.accountRepository.findOne({
       where: { id, tenant_id: tenantId },
     });
@@ -149,8 +141,6 @@ export class AccountsService {
     verificationId: string,
     verifiedData?: Record<string, any>
   ) {
-    this.logger.log(`Updating verification status for account: ${accountId} to ${status}`);
-
     const account = await this.accountRepository.findOne({
       where: { id: accountId },
     });
@@ -171,8 +161,6 @@ export class AccountsService {
 
   // Get all verifications for a specific account
   async getAccountVerifications(tenantId: string, accountId: string, page: number = 1, limit: number = 10) {
-    this.logger.log(`Getting verifications for account: ${accountId}`);
-
     // Verify account belongs to tenant
     const account = await this.accountRepository.findOne({
       where: { id: accountId, tenant_id: tenantId },
@@ -211,8 +199,6 @@ export class AccountsService {
 
   // Get all documents for a specific account
   async getAccountDocuments(tenantId: string, accountId: string) {
-    this.logger.log(`Getting documents for account: ${accountId}`);
-
     // Verify account belongs to tenant
     const account = await this.accountRepository.findOne({
       where: { id: accountId, tenant_id: tenantId },
@@ -241,8 +227,6 @@ export class AccountsService {
 
   // Search accounts by email, name, or reference_id
   async searchAccounts(tenantId: string, query: string, page: number = 1, limit: number = 10) {
-    this.logger.log(`Searching accounts for tenant: ${tenantId} with query: ${query}`);
-
     // Ensure page and limit are numbers
     const pageNum = Number(page) || 1;
     const limitNum = Number(limit) || 10;
@@ -269,8 +253,6 @@ export class AccountsService {
 
   // Get account statistics
   async getAccountStats(tenantId: string, accountId: string) {
-    this.logger.log(`Getting statistics for account: ${accountId}`);
-
     // Verify account belongs to tenant
     const account = await this.accountRepository.findOne({
       where: { id: accountId, tenant_id: tenantId },
@@ -323,8 +305,6 @@ export class AccountsService {
 
   // Find or create account (useful for verification flow)
   async findOrCreate(tenantId: string, createAccountDto: CreateAccountDto) {
-    this.logger.log(`Finding or creating account for tenant: ${tenantId}`);
-
     // Try to find by email first
     if (createAccountDto.email) {
       const existing = await this.accountRepository.findOne({
@@ -332,7 +312,6 @@ export class AccountsService {
       });
 
       if (existing) {
-        this.logger.log(`Account found by email: ${createAccountDto.email}`);
         return { account: existing, created: false };
       }
     }
@@ -344,7 +323,6 @@ export class AccountsService {
       });
 
       if (existing) {
-        this.logger.log(`Account found by reference_id: ${createAccountDto.reference_id}`);
         return { account: existing, created: false };
       }
     }

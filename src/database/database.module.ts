@@ -9,7 +9,6 @@ import { VerificationDocument } from './entities/verification-document.entity';
 import { WebhookLog } from './entities/webhook-log.entity';
 import { ApiKey } from './entities/api-key.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
-import { AuditLog } from './entities/audit-log.entity';
 import { Account } from './entities/account.entity';
 import { User } from './entities/user.entity';
 
@@ -32,7 +31,6 @@ import { User } from './entities/user.entity';
           WebhookLog,
           ApiKey,
           RefreshToken,
-          AuditLog,
           Account,
           User,
         ],
@@ -50,7 +48,6 @@ import { User } from './entities/user.entity';
       WebhookLog,
       ApiKey,
       RefreshToken,
-      AuditLog,
       Account,
       User,
     ]),

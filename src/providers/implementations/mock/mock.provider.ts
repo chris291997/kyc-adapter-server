@@ -1,10 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { IKycProvider, ProviderType, ProcessingMethod, ProviderCredentials, ProviderConfig, ProviderCapabilities, VerificationRequest, VerificationResponse, VerificationStatusResponse, WebhookResult, ProviderHealthResponse } from '../../interfaces/kyc-provider.interface';
 
 @Injectable()
 export class MockProvider implements IKycProvider {
-  private readonly logger = new Logger(MockProvider.name);
-  
   readonly name = 'Mock Provider';
   readonly type = ProviderType.SINGLE_STEP;
   readonly isInitialized = true;
@@ -33,7 +31,6 @@ export class MockProvider implements IKycProvider {
   };
 
   async initialize(credentials: ProviderCredentials, config?: ProviderConfig): Promise<void> {
-    this.logger.log('Mock provider initialized (no-op)');
   }
 
   async createVerification(request: VerificationRequest): Promise<VerificationResponse> {
@@ -61,7 +58,6 @@ export class MockProvider implements IKycProvider {
   }
 
   async cancelVerification(verificationId: string): Promise<boolean> {
-    this.logger.log(`Mock cancellation for verification: ${verificationId}`);
     return true;
   }
 

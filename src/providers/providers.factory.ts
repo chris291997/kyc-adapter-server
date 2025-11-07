@@ -3,10 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike } from 'typeorm';
 import { Provider } from '../database/entities/provider.entity';
 import { TenantProviderConfig } from '../database/entities/tenant-provider-config.entity';
-import { IKycProvider, ProviderCredentials, ProviderConfig } from './interfaces/kyc-provider.interface';
+import { IKycProvider } from './interfaces/kyc-provider.interface';
 import { IDmetaProvider } from './implementations/idmeta/idmeta.provider';
-// import { RegulaProvider } from './implementations/regula/regula.provider';
-// import { PersonaProvider } from './implementations/persona/persona.provider';
 import { MockProvider } from './implementations/mock/mock.provider';
 
 @Injectable()
@@ -17,8 +15,6 @@ export class ProvidersFactory {
     @InjectRepository(TenantProviderConfig)
     private readonly configRepository: Repository<TenantProviderConfig>,
     private readonly idmetaProvider: IDmetaProvider,
-    // private readonly regulaProvider: RegulaProvider,
-    // private readonly personaProvider: PersonaProvider,
     private readonly mockProvider: MockProvider,
   ) {}
 
@@ -89,12 +85,10 @@ export class ProvidersFactory {
         return this.idmetaProvider;
       
       case 'single_step':
-        // return this.regulaProvider;
-        return this.mockProvider; // Fallback to mock for now
+        return this.mockProvider;
       
       case 'async_webhook':
-        // return this.personaProvider;
-        return this.mockProvider; // Fallback to mock for now
+        return this.mockProvider;
       
       case 'mock':
         return this.mockProvider;

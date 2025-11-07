@@ -62,40 +62,35 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto) {
-    try {
-      const { email, password } = loginDto;
+    const { email, password } = loginDto;
 
-      const user = await this.validateUser(email, password);
-      if (!user) {
-        throw new UnauthorizedException('Invalid credentials');
-      }
+    const user = await this.validateUser(email, password);
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
-      const payload = {
-        sub: user.id,
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      userType: user.user_type,
+      tenantId: user.tenant_id,
+    };
+
+    const accessToken = this.jwtService.sign(payload);
+    const refreshToken = await this.createRefreshToken(user.id);
+
+    return {
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      user: {
+        id: user.id,
         email: user.email,
+        name: user.name,
         userType: user.user_type,
         tenantId: user.tenant_id,
-      };
-
-      const accessToken = this.jwtService.sign(payload);
-      const refreshToken = await this.createRefreshToken(user.id);
-
-      return {
-        access_token: accessToken,
-        refresh_token: refreshToken,
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          userType: user.user_type,
-          tenantId: user.tenant_id,
-          tenant: user.tenant,
-        },
-      };
-    } catch (error) {
-      console.error('Login error:', error);
-      throw error;
-    }
+        tenant: user.tenant,
+      },
+    };
   }
 
   async register(registerDto: RegisterDto) {
