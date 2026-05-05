@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { envValidationSchema } from './config/env.validation';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bull';
 import { DatabaseModule } from './database/database.module';
@@ -18,7 +19,9 @@ import { AccountsModule } from './accounts/accounts.module';
     // Configuration
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env', '.env.example'],
+      envFilePath: process.env.NODE_ENV === 'production' ? ['.env'] : ['.env', '.env.example'],
+      validationSchema: envValidationSchema,
+      validationOptions: { abortEarly: false },
     }),
     
     // Database

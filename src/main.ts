@@ -38,8 +38,12 @@ async function bootstrap() {
   }));
 
   // CORS configuration
+  const corsOrigins = process.env.CORS_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean);
+  if (!corsOrigins || corsOrigins.length === 0) {
+    throw new Error('CORS_ORIGINS env is required (no localhost fallback)');
+  }
   app.enableCors({
-    origin: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'],
+    origin: corsOrigins,
     credentials: true,
   });
 
