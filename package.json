@@ -20,7 +20,8 @@
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts",
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/data-source.ts",
     "schema:drop": "typeorm-ts-node-commonjs schema:drop -d src/database/data-source.ts",
-    "seed:run": "ts-node src/database/seeds/run-seeds.ts"
+    "seed:run": "ts-node src/database/seeds/run-seeds.ts",
+    "reset:data": "ts-node scripts/reset-data.ts"
   },
   "keywords": [
     "kyc",
