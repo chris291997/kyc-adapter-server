@@ -379,5 +379,30 @@ describe('AdminService', () => {
       expect(result.secret_key_set).toBe(true);
       expect(result.webhook_secret_set).toBe(true);
     });
+
+    it('getTenantProviderConfig (single) does not return webhook_secret values', async () => {
+      mockTenantProviderConfigRepository.findOne.mockResolvedValue({
+        id: 'cfg1',
+        tenant_id: 't1',
+        priority: 1,
+        is_enabled: true,
+        tenant_overrides: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+        provider: {
+          id: 'p1',
+          name: 'IDmeta',
+          type: 'multi_step',
+          base_url: 'https://x',
+          api_version: 'v1',
+          is_active: true,
+          webhook_secret: 'super-secret-do-not-leak',
+        },
+      });
+      const result = await service.getTenantProviderConfig('t1', 'cfg1');
+      expect(result).not.toHaveProperty('webhook_secret');
+      expect(JSON.stringify(result)).not.toContain('super-secret-do-not-leak');
+      expect(result.webhook_secret_set).toBe(true);
+    });
   });
 });

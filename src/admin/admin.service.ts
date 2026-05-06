@@ -769,6 +769,7 @@ export class AdminService {
       supports_hosted_workflow: provider.supports_hosted_workflow,
       is_active: provider.is_active,
       config: provider.config,
+      webhook_endpoint: `/v1/webhook/${(provider.name || '').toLowerCase()}`,
       api_key_set: Boolean(provider.api_key),
       secret_key_set: Boolean(provider.secret_key),
       webhook_secret_set: Boolean(provider.webhook_secret),
@@ -963,7 +964,7 @@ export class AdminService {
     if (!provider) {
       throw new NotFoundException(`Provider ${providerId} not found`);
     }
-    this.logger.warn(
+    this.logger.error(
       `[AUDIT] Super admin ${actingUserId} revealed secrets for provider ${providerId} (${provider.name})`,
     );
     // TODO: persist to audit_logs entity once that entity is wired (Recommendation 4 in CODE_REVIEW.md).
@@ -974,7 +975,7 @@ export class AdminService {
       secret_key: provider.secret_key,
       webhook_secret: provider.webhook_secret,
       revealed_at: new Date().toISOString(),
-      warning: 'These values are sensitive. Copy now; they will not be shown again without another reveal call.',
+      warning: 'These values are sensitive. Treat them as credentials and store them securely. This action has been audit-logged.',
     };
   }
 }
