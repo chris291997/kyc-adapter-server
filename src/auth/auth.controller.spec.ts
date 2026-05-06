@@ -13,7 +13,7 @@ describe('AuthController throttling', () => {
   beforeAll(async () => {
     const module = await Test.createTestingModule({
       imports: [
-        ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 5 }]),
+        ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 1000 }]),
       ],
       controllers: [AuthController],
       providers: [

@@ -36,6 +36,10 @@ import { encryptedColumnTransformer } from './database/transformers/encrypted-co
       useFactory: (config: ConfigService) => {
         const ttl = Number(config.get('RATE_LIMIT_TTL', 60)) * 1000;
         const limit = Number(config.get('RATE_LIMIT_MAX', 100));
+        // Note: ThrottlerStorageRedisService opens its own ioredis connection (separate
+        // from the shared RedisService client used elsewhere). This consumes one extra
+        // connection slot per app instance — fine for now, but follow-up: switch to a
+        // shared client if @nest-lab/throttler-storage-redis ever exposes a passthrough.
         const storage = config.get('REDIS_HOST')
           ? new ThrottlerStorageRedisService({
               host: config.get('REDIS_HOST'),
