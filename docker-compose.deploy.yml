@@ -1,0 +1,36 @@
+# Deploy overlay — combines with docker-compose.yml to bring up the full stack:
+#   docker compose -f docker-compose.yml -f docker-compose.deploy.yml up -d --build
+#
+# Adds the application service that builds from the local Dockerfile and connects
+# to the postgres + redis services defined in docker-compose.yml.
+#
+# Required env (loaded from .env via env_file):
+#   - NODE_ENV (production OR development)
+#   - JWT_SECRET (>=32 chars in production)
+#   - ENCRYPTION_KEY (exactly 32 chars)
+#   - CORS_ORIGINS (https:// in production)
+#   - REDIS_PASSWORD (must match the redis service's password)
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kyc-adapter-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      # Override these so the app talks to the sibling containers, not host loopback.
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      PORT: 3000

@@ -332,4 +332,77 @@ describe('AdminService', () => {
       expect(result).toEqual({ message: 'Tenant deleted successfully' });
     });
   });
+
+  describe('admin.service — secret leak prevention', () => {
+    it('getTenantProviderConfigs does not return webhook_secret values', async () => {
+      mockTenantProviderConfigRepository.find.mockResolvedValue([{
+        id: 'cfg1',
+        tenant_id: 't1',
+        priority: 1,
+        is_enabled: true,
+        tenant_overrides: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+        provider: {
+          id: 'p1',
+          name: 'IDmeta',
+          type: 'multi_step',
+          base_url: 'https://x',
+          api_version: 'v1',
+          is_active: true,
+          webhook_secret: 'super-secret-do-not-leak',
+          api_key: 'live-api-key',
+          secret_key: 'live-secret',
+        },
+      }]);
+      const result = await service.getTenantProviderConfigs('t1');
+      expect(result[0]).not.toHaveProperty('webhook_secret');
+      expect(JSON.stringify(result)).not.toContain('super-secret-do-not-leak');
+      expect(JSON.stringify(result)).not.toContain('live-api-key');
+      expect(JSON.stringify(result)).not.toContain('live-secret');
+      expect(result[0].webhook_secret_set).toBe(true);
+    });
+
+    it('getProvider does not return raw api_key/secret_key/webhook_secret', async () => {
+      mockProviderRepository.findOne.mockResolvedValue({
+        id: 'p1', name: 'IDmeta', type: 'multi_step', base_url: 'https://x',
+        api_version: 'v1', is_active: true, supports_webhooks: true,
+        supports_multi_step: true, supports_hosted_workflow: true,
+        api_key: 'leak-api', secret_key: 'leak-secret', webhook_secret: 'leak-hmac',
+        config: {}, created_at: new Date(), updated_at: new Date(),
+      });
+      const result = await service.getProvider('p1');
+      expect(result).not.toHaveProperty('api_key');
+      expect(result).not.toHaveProperty('secret_key');
+      expect(result).not.toHaveProperty('webhook_secret');
+      expect(result.api_key_set).toBe(true);
+      expect(result.secret_key_set).toBe(true);
+      expect(result.webhook_secret_set).toBe(true);
+    });
+
+    it('getTenantProviderConfig (single) does not return webhook_secret values', async () => {
+      mockTenantProviderConfigRepository.findOne.mockResolvedValue({
+        id: 'cfg1',
+        tenant_id: 't1',
+        priority: 1,
+        is_enabled: true,
+        tenant_overrides: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+        provider: {
+          id: 'p1',
+          name: 'IDmeta',
+          type: 'multi_step',
+          base_url: 'https://x',
+          api_version: 'v1',
+          is_active: true,
+          webhook_secret: 'super-secret-do-not-leak',
+        },
+      });
+      const result = await service.getTenantProviderConfig('t1', 'cfg1');
+      expect(result).not.toHaveProperty('webhook_secret');
+      expect(JSON.stringify(result)).not.toContain('super-secret-do-not-leak');
+      expect(result.webhook_secret_set).toBe(true);
+    });
+  });
 });

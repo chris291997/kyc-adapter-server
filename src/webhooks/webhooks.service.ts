@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { WebhookLog } from '../database/entities/webhook-log.entity';
@@ -70,41 +70,54 @@ export class WebhooksService {
         );
       }
 
-      // 5. Extract tenantId from payload (IDmeta sends it in metadata or nested structure)
-      const inferredTenantId = payload?.tenant_id || payload?.metadata?.tenantId || payload?.tenantId;
-      if (!inferredTenantId) {
-        this.logger.warn('Tenant ID not found in webhook payload');
+      // 5. Hard-fail if signature missing
+      if (!signature) {
+        await this.webhookLogRepository
+          .update(webhookLog.id, {
+            status: 'failed',
+            error_message: 'Missing webhook signature',
+            processed_at: new Date(),
+          })
+          .catch((e) => this.logger.error('Failed to log webhook rejection', e));
+        throw new UnauthorizedException('Missing webhook signature');
       }
 
-      // 6. Get webhook secret from provider entity (centralized credentials)
+      // 6. Hard-fail if provider has no webhook_secret configured
       const webhookSecret = providerEntity.webhook_secret;
-      
       if (!webhookSecret) {
-        this.logger.warn(`No webhook secret configured for provider ${providerId}`);
+        await this.webhookLogRepository
+          .update(webhookLog.id, {
+            status: 'failed',
+            error_message: 'Provider has no webhook secret configured',
+            processed_at: new Date(),
+          })
+          .catch((e) => this.logger.error('Failed to log webhook rejection', e));
+        throw new UnauthorizedException('Provider has no webhook secret configured');
       }
 
       // 7. Verify signature
-      if (signature && webhookSecret) {
-        const isValid = this.signatureService.verifySignature(
-          payload,
-          signature,
-          webhookSecret
-        );
-        
-        if (!isValid) {
-          await this.webhookLogRepository.update(webhookLog.id, {
+      const isValid = this.signatureService.verifySignature(payload, signature, webhookSecret);
+      if (!isValid) {
+        await this.webhookLogRepository
+          .update(webhookLog.id, {
             status: 'failed',
             error_message: 'Invalid webhook signature',
             processed_at: new Date(),
-          });
-          throw new Error('Invalid webhook signature');
-        }
+          })
+          .catch((e) => this.logger.error('Failed to log webhook rejection', e));
+        throw new UnauthorizedException('Invalid webhook signature');
       }
 
-      // 8. Parse provider-specific payload (provider is now initialized)
+      // 8. Optional: warn if tenant cannot be inferred (informational only — already verified)
+      const inferredTenantId = payload?.tenant_id || payload?.metadata?.tenantId || payload?.tenantId;
+      if (!inferredTenantId) {
+        this.logger.warn(`Tenant ID not found in webhook payload for provider ${providerId}`);
+      }
+
+      // 9. Parse provider-specific payload (provider is now initialized)
       const webhookResult = await provider.handleWebhook(payload, signature);
 
-      // 7. Find internal verification
+      // 10. Find internal verification
       const verification = await this.verificationRepository.findOne({
         where: {
           external_verification_id: webhookResult.verificationId,
@@ -115,7 +128,7 @@ export class WebhooksService {
         throw new NotFoundException('Verification not found');
       }
 
-      // 8. Update verification
+      // 11. Update verification
       await this.verificationRepository.update(verification.id, {
         status: webhookResult.status as any,
         provider_response: webhookResult.result,
@@ -129,7 +142,7 @@ export class WebhooksService {
         where: { id: verification.id },
       });
 
-      // 9. Update account if verification is approved/verified AND account is not already verified
+      // 12. Update account if verification is approved/verified AND account is not already verified
       if (updatedVerification?.account_id && 
           (webhookResult.status === 'approved' || webhookResult.status === 'verified')) {
         await this.updateAccountFromVerification(
@@ -142,14 +155,14 @@ export class WebhooksService {
         );
       }
 
-      // 10. Update webhook log
+      // 13. Update webhook log
       await this.webhookLogRepository.update(webhookLog.id, {
         verification_id: verification.id,
         status: 'processed',
         processed_at: new Date(),
       });
 
-      // 11. Broadcast to WebSocket for real-time UI updates
+      // 14. Broadcast to WebSocket for real-time UI updates
       if (!verification.id) {
         this.logger.error('Cannot publish WebSocket event: verification.id is undefined', {
           verification,
@@ -180,7 +193,7 @@ export class WebhooksService {
         }
       }
 
-      // 12. Send outgoing webhook to client
+      // 15. Send outgoing webhook to client
       if (verification.callback_url) {
         await this.outgoingWebhookService.sendWebhook(
           verification,

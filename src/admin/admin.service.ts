@@ -357,8 +357,6 @@ export class AdminService {
       tenant_overrides: config.tenant_overrides,
       webhook_endpoint: `/v1/webhook/${(config.provider.name || '').toLowerCase()}`,
       webhook_secret_set: Boolean(config.provider?.webhook_secret),
-      // Expose provider-level HMAC so super admins can configure provider dashboards
-      webhook_secret: config.provider?.webhook_secret,
       priority: config.priority,
       is_enabled: config.is_enabled,
       created_at: config.created_at,
@@ -500,7 +498,6 @@ export class AdminService {
       tenant_overrides: config.tenant_overrides,
       webhook_endpoint: `/v1/webhook/${(config.provider.name || '').toLowerCase()}`,
       webhook_secret_set: Boolean(config.provider?.webhook_secret),
-      webhook_secret: config.provider?.webhook_secret,
       priority: config.priority,
       is_enabled: config.is_enabled,
       created_at: config.created_at,
@@ -765,17 +762,17 @@ export class AdminService {
       id: provider.id,
       name: provider.name,
       type: provider.type,
-      base_url: provider.base_url,
       api_version: provider.api_version,
-      api_key: provider.api_key, // Full key for super admin
-      secret_key: provider.secret_key, // Full secret for super admin
-      webhook_endpoint: `/v1/webhook/${(provider.name || '').toLowerCase().replace(/\s+/g, '-')}`,
-      webhook_secret: provider.webhook_secret, // Full HMAC for super admin to configure in provider dashboard
+      base_url: provider.base_url,
       supports_webhooks: provider.supports_webhooks,
       supports_multi_step: provider.supports_multi_step,
       supports_hosted_workflow: provider.supports_hosted_workflow,
       is_active: provider.is_active,
       config: provider.config,
+      webhook_endpoint: `/v1/webhook/${(provider.name || '').toLowerCase()}`,
+      api_key_set: Boolean(provider.api_key),
+      secret_key_set: Boolean(provider.secret_key),
+      webhook_secret_set: Boolean(provider.webhook_secret),
       created_at: provider.created_at,
       updated_at: provider.updated_at,
     };
@@ -956,5 +953,29 @@ export class AdminService {
     this.logger.log(`Removed provider assignment ${assignmentId} from tenant ${tenantId}`);
 
     return { success: true, message: 'Provider unassigned from tenant' };
+  }
+
+  /**
+   * One-shot reveal of raw provider secrets for super admin (audit-logged).
+   * Use the reveal endpoint; secrets are NOT returned by getProvider.
+   */
+  async revealProviderSecrets(providerId: string, actingUserId: string) {
+    const provider = await this.providerRepository.findOne({ where: { id: providerId } });
+    if (!provider) {
+      throw new NotFoundException(`Provider ${providerId} not found`);
+    }
+    this.logger.error(
+      `[AUDIT] Super admin ${actingUserId} revealed secrets for provider ${providerId} (${provider.name})`,
+    );
+    // TODO: persist to audit_logs entity once that entity is wired (Recommendation 4 in CODE_REVIEW.md).
+    return {
+      id: provider.id,
+      name: provider.name,
+      api_key: provider.api_key,
+      secret_key: provider.secret_key,
+      webhook_secret: provider.webhook_secret,
+      revealed_at: new Date().toISOString(),
+      warning: 'These values are sensitive. Treat them as credentials and store them securely. This action has been audit-logged.',
+    };
   }
 }

@@ -1,5 +1,6 @@
 import { Controller, Post, Get, Param, Body, Headers, UseGuards, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiSecurity } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { WebhooksService } from './webhooks.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminAuthGuard } from '../auth/guards/admin-auth.guard';
@@ -11,6 +12,7 @@ export class WebhooksController {
     private readonly webhooksService: WebhooksService,
   ) {}
 
+  @Throttle({ default: { ttl: 60_000, limit: 100 } })
   @Post('providers/:providerId')
   @ApiOperation({ summary: 'Handle incoming webhook from provider' })
   @ApiResponse({ status: 200, description: 'Webhook processed successfully' })

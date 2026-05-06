@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@ne
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminAuthGuard } from '../auth/guards/admin-auth.guard';
+import { SuperAdminAuthGuard } from '../auth/guards/super-admin-auth.guard';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto, UpdateTenantStatusDto, UpdateTenantQuotaDto } from './dto/update-tenant.dto';
 import { CreateTenantProviderConfigDto, UpdateTenantProviderConfigDto } from './dto/tenant-provider-config.dto';
@@ -288,6 +289,16 @@ export class AdminController {
   @ApiResponse({ status: 404, description: 'Provider not found' })
   async testProviderConnection(@Param('id') id: string) {
     return this.adminService.testProviderConnection(id);
+  }
+
+  @Post('providers/:id/reveal-secrets')
+  @UseGuards(JwtAuthGuard, SuperAdminAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'One-time reveal of provider secrets for super admin (audit-logged)' })
+  @ApiResponse({ status: 200, description: 'Secrets returned once' })
+  @ApiResponse({ status: 403, description: 'Not super admin' })
+  async revealProviderSecrets(@Param('id') id: string, @Request() req) {
+    return this.adminService.revealProviderSecrets(id, req.user.id);
   }
 }
 
