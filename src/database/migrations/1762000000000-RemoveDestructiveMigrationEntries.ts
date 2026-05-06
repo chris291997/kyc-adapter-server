@@ -7,8 +7,11 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  */
 export class RemoveDestructiveMigrationEntries1762000000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // The tracking table name is configured as 'typeorm_migrations' in data-source.ts.
+    // On a fresh DB those entries were never inserted, so this is a no-op.
+    // On a populated DB the rows are removed so the tree is consistent.
     await queryRunner.query(`
-      DELETE FROM migrations
+      DELETE FROM typeorm_migrations
       WHERE name IN (
         'ClearAccountsAndVerifications1730138400000',
         'ClearExistingData1761600000000',
