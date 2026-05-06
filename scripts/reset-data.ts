@@ -7,8 +7,7 @@
  * Refuses to run when NODE_ENV=production unless ALLOW_PROD_DATA_RESET=true is set.
  */
 import 'dotenv/config';
-import { DataSource } from 'typeorm';
-import dataSourceOptions from '../src/database/data-source';
+import { AppDataSource } from '../src/database/data-source';
 
 async function main() {
   const args = Object.fromEntries(
@@ -26,8 +25,10 @@ async function main() {
     process.exit(1);
   }
 
-  const ds = new DataSource(dataSourceOptions as any);
-  await ds.initialize();
+  const ds = AppDataSource;
+  if (!ds.isInitialized) {
+    await ds.initialize();
+  }
 
   await ds.query('SET session_replication_role = replica;');
   try {
