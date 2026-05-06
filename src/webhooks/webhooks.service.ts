@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { WebhookLog } from '../database/entities/webhook-log.entity';
@@ -70,35 +70,42 @@ export class WebhooksService {
         );
       }
 
-      // 5. Extract tenantId from payload (IDmeta sends it in metadata or nested structure)
-      const inferredTenantId = payload?.tenant_id || payload?.metadata?.tenantId || payload?.tenantId;
-      if (!inferredTenantId) {
-        this.logger.warn('Tenant ID not found in webhook payload');
+      // 5. Hard-fail if signature missing
+      if (!signature) {
+        await this.webhookLogRepository.update(webhookLog.id, {
+          status: 'failed',
+          error_message: 'Missing webhook signature',
+          processed_at: new Date(),
+        });
+        throw new UnauthorizedException('Missing webhook signature');
       }
 
-      // 6. Get webhook secret from provider entity (centralized credentials)
+      // 6. Hard-fail if provider has no webhook_secret configured
       const webhookSecret = providerEntity.webhook_secret;
-      
       if (!webhookSecret) {
-        this.logger.warn(`No webhook secret configured for provider ${providerId}`);
+        await this.webhookLogRepository.update(webhookLog.id, {
+          status: 'failed',
+          error_message: 'Provider has no webhook secret configured',
+          processed_at: new Date(),
+        });
+        throw new UnauthorizedException('Provider has no webhook secret configured');
       }
 
       // 7. Verify signature
-      if (signature && webhookSecret) {
-        const isValid = this.signatureService.verifySignature(
-          payload,
-          signature,
-          webhookSecret
-        );
-        
-        if (!isValid) {
-          await this.webhookLogRepository.update(webhookLog.id, {
-            status: 'failed',
-            error_message: 'Invalid webhook signature',
-            processed_at: new Date(),
-          });
-          throw new Error('Invalid webhook signature');
-        }
+      const isValid = this.signatureService.verifySignature(payload, signature, webhookSecret);
+      if (!isValid) {
+        await this.webhookLogRepository.update(webhookLog.id, {
+          status: 'failed',
+          error_message: 'Invalid webhook signature',
+          processed_at: new Date(),
+        });
+        throw new UnauthorizedException('Invalid webhook signature');
+      }
+
+      // 8. Optional: warn if tenant cannot be inferred (informational only — already verified)
+      const inferredTenantId = payload?.tenant_id || payload?.metadata?.tenantId || payload?.tenantId;
+      if (!inferredTenantId) {
+        this.logger.warn(`Tenant ID not found in webhook payload for provider ${providerId}`);
       }
 
       // 8. Parse provider-specific payload (provider is now initialized)
