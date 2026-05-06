@@ -1,5 +1,6 @@
 import { Controller, Post, Param, Body, Headers } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { WebhooksService } from './webhooks.service';
 import { ProvidersFactory } from '../providers/providers.factory';
 
@@ -11,6 +12,7 @@ export class PublicWebhooksController {
     private readonly providersFactory: ProvidersFactory,
   ) {}
 
+  @Throttle({ default: { ttl: 60_000, limit: 100 } })
   @Post(':providerSlug')
   @ApiOperation({ summary: 'Provider-level webhook endpoint (slug-based, global)' })
   @ApiResponse({ status: 200, description: 'Webhook processed successfully' })

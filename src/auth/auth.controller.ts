@@ -1,5 +1,6 @@
 import { Controller, Post, Body, UseGuards, Get, Param, Delete, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -14,6 +15,7 @@ import { TenantAuthGuard } from './guards/tenant-auth.guard';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @Post('login')
   @ApiOperation({ summary: 'Login user' })
   @ApiResponse({ status: 200, description: 'Login successful' })

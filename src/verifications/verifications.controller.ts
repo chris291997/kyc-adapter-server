@@ -1,5 +1,6 @@
 import { Controller, Post, Get, Put, Body, Param, UseGuards, Request, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { VerificationsService } from './verifications.service';
 import { CreateVerificationDto } from './dto/create-verification.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
@@ -28,6 +29,7 @@ import { AdminAuthGuard } from '../auth/guards/admin-auth.guard';
 export class VerificationsController {
   constructor(private readonly verificationsService: VerificationsService) {}
 
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @Post('initiate')
   @UseGuards(JwtOrApiKeyGuard)
   @ApiBearerAuth()

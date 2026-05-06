@@ -1,8 +1,11 @@
 import { Module, OnModuleInit } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { envValidationSchema } from './config/env.validation';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bull';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
+import { APP_GUARD } from '@nestjs/core';
 import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './auth/auth.module';
 import { ProvidersModule } from './providers/providers.module';
@@ -25,10 +28,31 @@ import { encryptedColumnTransformer } from './database/transformers/encrypted-co
       validationSchema: envValidationSchema,
       validationOptions: { abortEarly: false },
     }),
-    
+
+    // Rate limiting
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const ttl = Number(config.get('RATE_LIMIT_TTL', 60)) * 1000;
+        const limit = Number(config.get('RATE_LIMIT_MAX', 100));
+        const storage = config.get('REDIS_HOST')
+          ? new ThrottlerStorageRedisService({
+              host: config.get('REDIS_HOST'),
+              port: Number(config.get('REDIS_PORT', 6379)),
+              password: config.get('REDIS_PASSWORD') || undefined,
+            })
+          : undefined;
+        return {
+          throttlers: [{ name: 'default', ttl, limit }],
+          storage,
+        };
+      },
+    }),
+
     // Database
     DatabaseModule,
-    
+
     // Queue system (optional - only if Redis is available)
     ...(process.env.REDIS_HOST ? [BullModule.forRoot({
       redis: {
@@ -37,7 +61,7 @@ import { encryptedColumnTransformer } from './database/transformers/encrypted-co
         password: process.env.REDIS_PASSWORD,
       },
     })] : []),
-    
+
     // Feature modules
     AuthModule,
     ProvidersModule,
@@ -48,6 +72,9 @@ import { encryptedColumnTransformer } from './database/transformers/encrypted-co
     TenantModule,
     CommonModule,
     AccountsModule,
+  ],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule implements OnModuleInit {

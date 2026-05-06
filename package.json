@@ -33,6 +33,7 @@
   "author": "KYC Adapter Team",
   "license": "MIT",
   "dependencies": {
+    "@nest-lab/throttler-storage-redis": "^1.2.0",
     "@nestjs/bull": "^10.0.1",
     "@nestjs/common": "^10.0.0",
     "@nestjs/config": "^3.1.1",
@@ -42,6 +43,7 @@
     "@nestjs/platform-express": "^10.0.0",
     "@nestjs/platform-socket.io": "^10.2.8",
     "@nestjs/swagger": "^7.1.17",
+    "@nestjs/throttler": "^6.5.0",
     "@nestjs/typeorm": "^10.0.1",
     "@nestjs/websockets": "^10.2.8",
     "bcryptjs": "^2.4.3",
