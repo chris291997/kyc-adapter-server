@@ -289,5 +289,15 @@ export class AdminController {
   async testProviderConnection(@Param('id') id: string) {
     return this.adminService.testProviderConnection(id);
   }
+
+  @Post('providers/:id/reveal-secrets')
+  @UseGuards(JwtAuthGuard, AdminAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'One-time reveal of provider secrets for super admin (audit-logged)' })
+  @ApiResponse({ status: 200, description: 'Secrets returned once' })
+  @ApiResponse({ status: 403, description: 'Not super admin' })
+  async revealProviderSecrets(@Param('id') id: string, @Request() req) {
+    return this.adminService.revealProviderSecrets(id, req.user.id);
+  }
 }
 
