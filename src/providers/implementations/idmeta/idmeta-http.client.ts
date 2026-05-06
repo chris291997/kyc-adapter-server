@@ -40,6 +40,12 @@ export interface IDmetaPhilsysResponse {
   result?: string | any;
 }
 
+export interface IDmetaPhilsysValidateResponse {
+  status: 'SUCCESS' | string;
+  message?: string;
+  publicKey?: string;
+}
+
 export interface IDmetaDocumentVerificationRequest {
   imageFrontSide: string;
   imageBackSide?: string;
@@ -344,6 +350,38 @@ export class IDmetaHttpClient {
     } catch (error) {
       this.logger.error('IDmeta health check failed', error.response?.data || error.message);
       throw new Error(`IDmeta health check failed: ${error.response?.data?.message || error.message}`);
+    }
+  }
+
+  /**
+   * Server-side wrapper for the IDMeta PhilSys SDK's validate-verification call.
+   * The official browser SDK GETs this endpoint to obtain a one-time eVerify
+   * publicKey — but IDMeta's CORS policy blocks calls from any non-IDMeta origin.
+   * Calling it from our server (no Origin header) succeeds, and we relay the
+   * publicKey back to the CLIENT, which then drives the eVerify liveness SDK
+   * directly (eVerify runs entirely on liveness.everify.gov.ph — no CORS).
+   */
+  async validatePhilsysVerification(externalVerificationId: string): Promise<IDmetaPhilsysValidateResponse> {
+    const axios = require('axios');
+    const endpoint = `${this.baseUrl}/v2/philsys/validate-verification?verificationId=${encodeURIComponent(externalVerificationId)}`;
+
+    try {
+      const response = await axios.get(endpoint, {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        timeout: this.timeout,
+      });
+      return response.data;
+    } catch (error) {
+      this.logger.error(
+        'Failed to validate IDmeta PhilSys verification',
+        error.response?.data || error.message,
+      );
+      throw new Error(
+        `IDmeta PhilSys validate-verification failed: ${error.response?.data?.message || error.message}`,
+      );
     }
   }
 
@@ -848,22 +886,21 @@ export class IDmetaHttpClient {
 
   async manualFinalizeVerification(request: IDmetaManualFinalizeVerificationRequest): Promise<IDmetaManualFinalizeVerificationResponse> {
     const axios = require('axios');
-    const FormData = require('form-data');
+    // IDMeta's live API rejects POST on this route ("The POST method is not supported
+    // for route api/v1/verification/manual-finalize-verification. Supported methods: GET, HEAD.")
+    // even though the Postman collection documents it as POST with form-data. Use GET with
+    // query params, which is what Laravel actually has registered.
     const endpoint = `${this.baseUrl}/${this.apiVersion}/verification/manual-finalize-verification`;
 
     try {
-      // Manual finalize uses form-data according to Postman collection
-      const formData = new FormData();
-      formData.append('template_id', String(request.template_id));
-      formData.append('verification_id', String(request.verification_id));
-
-      const formHeaders = formData.getHeaders();
-
-      const response = await axios.post(endpoint, formData, {
+      const response = await axios.get(endpoint, {
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
           Accept: 'application/json',
-          ...formHeaders,
+        },
+        params: {
+          template_id: String(request.template_id),
+          verification_id: String(request.verification_id),
         },
         timeout: this.timeout,
       });
