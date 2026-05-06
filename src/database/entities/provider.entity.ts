@@ -2,6 +2,7 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateCol
 import { TenantProviderConfig } from './tenant-provider-config.entity';
 import { Verification } from './verification.entity';
 import { WebhookLog } from './webhook-log.entity';
+import { encryptedColumnTransformer } from '../transformers/encrypted-column.transformer';
 
 @Entity('providers')
 export class Provider {
@@ -21,13 +22,13 @@ export class Provider {
   base_url: string;
 
   // Provider credentials (centralized)
-  @Column({ nullable: true })
+  @Column({ nullable: true, transformer: encryptedColumnTransformer })
   api_key?: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, transformer: encryptedColumnTransformer })
   secret_key?: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, transformer: encryptedColumnTransformer })
   webhook_secret?: string;
 
   // Auto-generated webhook endpoint (read-only, computed from name)

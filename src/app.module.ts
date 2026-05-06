@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, OnModuleInit } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { envValidationSchema } from './config/env.validation';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -13,6 +13,8 @@ import { AdminModule } from './admin/admin.module';
 import { TenantModule } from './tenant/tenant.module';
 import { CommonModule } from './common/common.module';
 import { AccountsModule } from './accounts/accounts.module';
+import { EncryptionService } from './common/encryption.service';
+import { encryptedColumnTransformer } from './database/transformers/encrypted-column.transformer';
 
 @Module({
   imports: [
@@ -48,4 +50,9 @@ import { AccountsModule } from './accounts/accounts.module';
     AccountsModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements OnModuleInit {
+  constructor(private readonly encryption: EncryptionService) {}
+  onModuleInit() {
+    encryptedColumnTransformer.__setEncryptionService(this.encryption);
+  }
+}
