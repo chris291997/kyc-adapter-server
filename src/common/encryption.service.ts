@@ -15,7 +15,11 @@ export class EncryptionService {
       throw new Error('ENCRYPTION_KEY environment variable is required');
     }
     if (encryptionKey.length !== 32) {
-      throw new Error(`ENCRYPTION_KEY must be exactly 32 characters long. Got: ${encryptionKey.length} characters`);
+      throw new Error(
+        `ENCRYPTION_KEY must be exactly 32 characters (UTF-8 bytes), giving a 256-bit AES key. ` +
+        `Got: ${encryptionKey.length} characters. ` +
+        `Generate a suitable key with: openssl rand -base64 24 | head -c 32`
+      );
     }
     this.key = Buffer.from(encryptionKey, 'utf8');
   }

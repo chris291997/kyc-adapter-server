@@ -49,4 +49,9 @@ describe('EncryptionService', () => {
     process.env.ENCRYPTION_KEY = 'too-short';
     expect(() => new EncryptionService(new ConfigService())).toThrow(/32/);
   });
+
+  it('throws on ciphertext with wrong segment count', () => {
+    expect(() => service.decrypt('not-a-valid-ciphertext')).toThrow(/format/i);
+    expect(() => service.decrypt('only:two-parts')).toThrow(/format/i);
+  });
 });
