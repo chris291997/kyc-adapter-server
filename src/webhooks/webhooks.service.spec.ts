@@ -15,7 +15,7 @@ describe('WebhooksService', () => {
   let service: WebhooksService;
   const mockWebhookLogRepo: any = {
     save: jest.fn(),
-    update: jest.fn(),
+    update: jest.fn().mockResolvedValue(undefined),
     findOne: jest.fn(),
     find: jest.fn(),
   };
@@ -144,6 +144,10 @@ describe('WebhooksService', () => {
       await expect(
         service.handleProviderWebhook('p1', { tenant_id: 't1' }, undefined),
       ).rejects.toThrow(/signature/i);
+      expect(mockWebhookLogRepo.update).toHaveBeenCalledWith(
+        'log1',
+        expect.objectContaining({ status: 'failed' }),
+      );
     });
 
     it('rejects when provider has no webhook_secret', async () => {
@@ -153,6 +157,10 @@ describe('WebhooksService', () => {
       await expect(
         service.handleProviderWebhook('p1', { tenant_id: 't1' }, 'a'.repeat(64)),
       ).rejects.toThrow(/webhook secret/i);
+      expect(mockWebhookLogRepo.update).toHaveBeenCalledWith(
+        'log1',
+        expect.objectContaining({ status: 'failed' }),
+      );
     });
 
     it('rejects when signature is invalid', async () => {
@@ -160,6 +168,10 @@ describe('WebhooksService', () => {
       await expect(
         service.handleProviderWebhook('p1', { tenant_id: 't1' }, 'a'.repeat(64)),
       ).rejects.toThrow(/invalid.*signature/i);
+      expect(mockWebhookLogRepo.update).toHaveBeenCalledWith(
+        'log1',
+        expect.objectContaining({ status: 'failed' }),
+      );
     });
   });
 });
