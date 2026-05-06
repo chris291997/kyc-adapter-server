@@ -170,6 +170,45 @@ export class VerificationsService {
     }
   }
 
+  /**
+   * Server-side proxy for the IDMeta PhilSys SDK validate-verification step.
+   * The browser SDK can't do this call directly because IDMeta blocks
+   * cross-origin requests. We perform it here and hand the resulting eVerify
+   * publicKey back to the CLIENT, which then drives the eVerify liveness SDK
+   * directly (no CORS — eVerify runs on its own origin).
+   */
+  async validatePhilsysVerification(tenantId: string, verificationId: string): Promise<{ publicKey: string }> {
+    const verification = await this.getVerification(verificationId, tenantId);
+    const { providerInstance, providerEntity, assignment } = await this.getProviderForTenant(tenantId);
+
+    if (!(providerInstance instanceof IDmetaProvider)) {
+      throw new BadRequestException('PH PhilSys validate is only supported for IDmeta provider');
+    }
+
+    if (!providerInstance.isInitialized) {
+      await providerInstance.initialize(
+        {
+          apiKey: providerEntity.api_key,
+          secretKey: providerEntity.secret_key,
+          webhookSecret: providerEntity.webhook_secret,
+          baseUrl: providerEntity.base_url,
+          apiVersion: providerEntity.api_version || 'v1',
+        },
+        {
+          timeout: (providerEntity.config as any)?.timeout || 30000,
+          retryAttempts: (providerEntity.config as any)?.retryAttempts || 3,
+          ...assignment.tenant_overrides,
+        }
+      );
+    }
+
+    if (!verification.external_verification_id) {
+      throw new BadRequestException('Verification is not initialized with IDmeta. Initiate a session first.');
+    }
+
+    return providerInstance.validatePhilsysVerification(verification.external_verification_id);
+  }
+
   async verifyPhilsysPcn(tenantId: string, dto: PhilsysPcnDto) {
     // 1) Load verification and provider
     const verification = await this.getVerification(dto.verificationId, tenantId);

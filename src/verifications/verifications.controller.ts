@@ -159,6 +159,20 @@ export class VerificationsController {
     return this.verificationsService.verifyPhilsysPcn(req.user.tenantId, dto);
   }
 
+  @Get(':id/philsys-validate')
+  @UseGuards(JwtOrApiKeyGuard)
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
+  @ApiOperation({
+    summary: 'Server-side proxy for IDMeta PhilSys SDK validate-verification call',
+    description:
+      'Returns the eVerify publicKey for the given verification. The CLIENT uses this to drive the eVerify liveness SDK directly, bypassing the IDMeta SDK CORS restriction.',
+  })
+  @ApiResponse({ status: 200, description: 'PhilSys publicKey returned' })
+  async validatePhilsysVerification(@Param('id') id: string, @Request() req) {
+    return this.verificationsService.validatePhilsysVerification(req.user.tenantId, id);
+  }
+
   @Post('philippines/lto/drivers-license')
   @UseGuards(JwtOrApiKeyGuard)
   @ApiBearerAuth()

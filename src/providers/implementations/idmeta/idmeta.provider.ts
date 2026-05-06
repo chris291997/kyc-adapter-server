@@ -188,6 +188,18 @@ export class IDmetaProvider implements IKycProvider {
   }
 
   /**
+   * Server-side proxy for the PhilSys SDK's validate-verification call.
+   * Returns the eVerify publicKey the CLIENT needs to drive the liveness SDK.
+   */
+  async validatePhilsysVerification(externalVerificationId: string): Promise<{ publicKey: string }> {
+    const response = await this.httpClient.validatePhilsysVerification(externalVerificationId);
+    if (response.status !== 'SUCCESS' || !response.publicKey) {
+      throw new Error(response.message || 'IDmeta validate-verification did not return a publicKey');
+    }
+    return { publicKey: response.publicKey };
+  }
+
+  /**
    * Execute Document Verification against IDmeta
    */
   async verifyDocument(params: {
