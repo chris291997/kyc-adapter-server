@@ -59,4 +59,10 @@ describe('envValidationSchema', () => {
     });
     expect(error?.message).toMatch(/ENCRYPTION_KEY/);
   });
+
+  it('rejects any env missing DB_HOST', () => {
+    const { DB_HOST, ...env } = baseValid;
+    const { error } = envValidationSchema.validate(env);
+    expect(error?.message).toMatch(/DB_HOST/);
+  });
 });

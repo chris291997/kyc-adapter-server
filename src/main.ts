@@ -38,9 +38,14 @@ async function bootstrap() {
   }));
 
   // CORS configuration
-  const corsOrigins = process.env.CORS_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean);
+  const rawCors = process.env.CORS_ORIGINS;
+  const corsOrigins = rawCors?.split(',').map((s) => s.trim()).filter(Boolean);
   if (!corsOrigins || corsOrigins.length === 0) {
-    throw new Error('CORS_ORIGINS env is required (no localhost fallback)');
+    throw new Error(
+      rawCors !== undefined
+        ? `CORS_ORIGINS is set but contains no valid origins (got: "${rawCors}")`
+        : 'CORS_ORIGINS env is required (no localhost fallback)',
+    );
   }
   app.enableCors({
     origin: corsOrigins,

@@ -4,19 +4,16 @@ const httpsOriginList = Joi.string()
   .custom((value, helpers) => {
     const origins = String(value).split(',').map((s) => s.trim()).filter(Boolean);
     if (origins.length === 0) {
-      return helpers.error('string.corsEmpty');
+      return helpers.error('any.invalid', { message: 'CORS_ORIGINS must contain at least one origin' });
     }
     for (const origin of origins) {
       if (!origin.startsWith('https://')) {
-        return helpers.error('string.corsHttps', { origin });
+        return helpers.error('any.invalid', { message: `CORS_ORIGINS entry "${origin}" must use https:// in production` });
       }
     }
     return value;
   })
-  .messages({
-    'string.corsEmpty': 'CORS_ORIGINS must contain at least one origin',
-    'string.corsHttps': 'CORS_ORIGINS entry "{{#origin}}" must use https:// in production',
-  });
+  .messages({ 'any.invalid': '{{#message}}' });
 
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'test', 'production').default('development'),
