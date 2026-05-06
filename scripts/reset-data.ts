@@ -13,8 +13,10 @@ import dataSourceOptions from '../src/database/data-source';
 async function main() {
   const args = Object.fromEntries(
     process.argv.slice(2).map((a) => {
-      const [k, v] = a.replace(/^--/, '').split('=');
-      return [k, v ?? 'true'];
+      const stripped = a.replace(/^--/, '');
+      const eqIdx = stripped.indexOf('=');
+      if (eqIdx === -1) return [stripped, 'true'];
+      return [stripped.slice(0, eqIdx), stripped.slice(eqIdx + 1)];
     }),
   );
   const mode = args.mode ?? 'verifications';
@@ -31,6 +33,8 @@ async function main() {
   try {
     if (mode === 'full') {
       console.log('Mode: full — wiping all tenant data, keeping super_admin users');
+      // FK enforcement is suppressed by SET session_replication_role = replica above.
+      // Order below follows entity child-to-parent dependency for clarity, not necessity.
       await ds.query("DELETE FROM webhook_logs;");
       await ds.query("DELETE FROM verification_documents;");
       await ds.query("DELETE FROM verifications;");
@@ -43,6 +47,7 @@ async function main() {
       await ds.query("DELETE FROM providers;");
     } else if (mode === 'verifications') {
       console.log('Mode: verifications — wiping verifications + accounts, keeping configuration');
+      // Note: refresh_tokens are intentionally preserved in this mode — they are user-scoped, not verification-scoped.
       await ds.query("DELETE FROM webhook_logs WHERE verification_id IS NOT NULL;");
       await ds.query("DELETE FROM verification_documents;");
       await ds.query("DELETE FROM verifications;");

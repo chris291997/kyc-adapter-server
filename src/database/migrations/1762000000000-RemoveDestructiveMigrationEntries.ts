@@ -17,7 +17,7 @@ export class RemoveDestructiveMigrationEntries1762000000000 implements Migration
     `);
   }
 
-  public async down(): Promise<void> {
+  public async down(_queryRunner: QueryRunner): Promise<void> {
     // No-op: the entries point to source files that no longer exist.
   }
 }
